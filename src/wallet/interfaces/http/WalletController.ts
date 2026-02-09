@@ -18,8 +18,12 @@ export class WalletController {
     req: AuthenticatedRequest,
     res: Response
   ): Promise<void> => {
+    const walletId = req.userId ?? "";
+    if (walletId.length === 0) {
+      throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
+    }
+
     const schema = z.object({
-      user_id: z.string().min(1),
       type: z.enum(["CREDIT", "DEBIT"]),
       amount: z.number().int().positive()
     });
@@ -30,14 +34,13 @@ export class WalletController {
     }
 
     const idempotencyKey = req.get("Idempotency-Key") ?? randomUUID();
-    const walletId = parsed.data.user_id;
     const result = await this.createTransactionUseCase.execute({
       walletId,
       type: parsed.data.type === "CREDIT" ? "credit" : "debit",
       amount: parsed.data.amount,
       idempotencyKey
     });
-    res.status(200).json({
+    res.status(201).json({
       id: result.transactionId,
       user_id: walletId,
       amount: parsed.data.amount,
@@ -70,7 +73,7 @@ export class WalletController {
       amount: parsed.data.amount,
       idempotencyKey
     });
-    res.status(200).json({
+    res.status(201).json({
       id: result.transactionId,
       user_id: walletId,
       amount: parsed.data.amount,

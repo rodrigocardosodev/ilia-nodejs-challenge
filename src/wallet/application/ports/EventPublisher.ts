@@ -5,4 +5,5 @@ export type DomainEvent = {
 
 export interface EventPublisher {
   publish(event: DomainEvent): Promise<void>;
+  publishMany(events: DomainEvent[]): Promise<void>;
 }

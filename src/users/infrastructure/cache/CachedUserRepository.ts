@@ -13,7 +13,12 @@ export class CachedUserRepository implements UserRepository {
   async create(input: CreateUserInput): Promise<User> {
     const user = await this.baseRepository.create(input);
     try {
-      await this.redis.set(this.userKey(user.id), JSON.stringify(user), "EX", 120);
+      await this.redis.set(
+        this.userKey(user.id),
+        JSON.stringify(this.toCacheData(user)),
+        "EX",
+        120
+      );
       await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
     } catch { }
     return user;
@@ -24,14 +29,14 @@ export class CachedUserRepository implements UserRepository {
       const cached = await this.redis.get(this.userKey(id));
       if (cached) {
         const data = JSON.parse(cached);
-        if (data.password) {
+        if (data.id && data.email && data.createdAt) {
           this.metrics.recordCacheHit("users_by_id");
           return new User(
             data.id,
             data.firstName,
             data.lastName,
             data.email,
-            data.password,
+            "",
             new Date(data.createdAt)
           );
         }
@@ -41,7 +46,12 @@ export class CachedUserRepository implements UserRepository {
     const user = await this.baseRepository.findById(id);
     if (user) {
       try {
-        await this.redis.set(this.userKey(id), JSON.stringify(user), "EX", 120);
+        await this.redis.set(
+          this.userKey(id),
+          JSON.stringify(this.toCacheData(user)),
+          "EX",
+          120
+        );
       } catch { }
     }
     return user;
@@ -52,14 +62,19 @@ export class CachedUserRepository implements UserRepository {
       const cachedId = await this.redis.get(this.emailKey(email));
       if (cachedId) {
         this.metrics.recordCacheHit("users_by_email");
-        return this.findById(cachedId);
+        return this.baseRepository.findById(cachedId);
       }
     } catch { }
     this.metrics.recordCacheMiss("users_by_email");
     const user = await this.baseRepository.findByEmail(email);
     if (user) {
       try {
-        await this.redis.set(this.userKey(user.id), JSON.stringify(user), "EX", 120);
+        await this.redis.set(
+          this.userKey(user.id),
+          JSON.stringify(this.toCacheData(user)),
+          "EX",
+          120
+        );
         await this.redis.set(this.emailKey(email), user.id, "EX", 120);
       } catch { }
     }
@@ -79,7 +94,12 @@ export class CachedUserRepository implements UserRepository {
       return null;
     }
     try {
-      await this.redis.set(this.userKey(user.id), JSON.stringify(user), "EX", 120);
+      await this.redis.set(
+        this.userKey(user.id),
+        JSON.stringify(this.toCacheData(user)),
+        "EX",
+        120
+      );
       await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
     } catch {}
     return user;
@@ -103,5 +123,21 @@ export class CachedUserRepository implements UserRepository {
 
   private emailKey(email: string): string {
     return `users:email:${email.toLowerCase()}`;
+  }
+
+  private toCacheData(user: User): {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    createdAt: string;
+  } {
+    return {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      createdAt: user.createdAt.toISOString()
+    };
   }
 }

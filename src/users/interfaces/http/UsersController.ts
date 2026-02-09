@@ -43,7 +43,7 @@ export class UsersController {
       password: parsed.data.password
     });
 
-    res.status(200).json({
+    res.status(201).json({
       id: result.id,
       first_name: result.firstName,
       last_name: result.lastName,
@@ -100,6 +100,13 @@ export class UsersController {
     if (userId.length === 0) {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }
+    const requesterId = req.userId ?? "";
+    if (requesterId.length === 0) {
+      throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
+    }
+    if (requesterId !== userId) {
+      throw new AppError("FORBIDDEN", 403, "Forbidden");
+    }
     const user = await this.getUserUseCase.execute(userId);
     if (!user) {
       throw new AppError("NOT_FOUND", 404, "User not found");
@@ -117,6 +124,13 @@ export class UsersController {
     const userId = typeof rawId === "string" ? rawId : "";
     if (userId.length === 0) {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
+    }
+    const requesterId = req.userId ?? "";
+    if (requesterId.length === 0) {
+      throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
+    }
+    if (requesterId !== userId) {
+      throw new AppError("FORBIDDEN", 403, "Forbidden");
     }
     const schema = z.object({
       first_name: z.string().min(2),
@@ -148,6 +162,13 @@ export class UsersController {
     const userId = typeof rawId === "string" ? rawId : "";
     if (userId.length === 0) {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
+    }
+    const requesterId = req.userId ?? "";
+    if (requesterId.length === 0) {
+      throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
+    }
+    if (requesterId !== userId) {
+      throw new AppError("FORBIDDEN", 403, "Forbidden");
     }
     await this.deleteUserUseCase.execute(userId);
     res.status(200).send();
