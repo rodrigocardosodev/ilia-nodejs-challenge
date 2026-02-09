@@ -2,6 +2,10 @@ import Redis from "ioredis";
 import {
   ApplyTransactionInput,
   ApplyTransactionResult,
+  CompensateTransactionInput,
+  CreateSagaInput,
+  SagaRecord,
+  UpdateSagaInput,
   TransactionRecord,
   TransferBetweenUsersInput,
   TransferBetweenUsersResult,
@@ -78,6 +82,31 @@ export class CachedWalletRepository implements WalletRepository {
     type?: "credit" | "debit"
   ): Promise<TransactionRecord[]> {
     return this.baseRepository.listTransactions(walletId, type);
+  }
+
+  async createSaga(input: CreateSagaInput): Promise<void> {
+    await this.baseRepository.createSaga(input);
+  }
+
+  async findSagaByIdempotencyKey(idempotencyKey: string): Promise<SagaRecord | null> {
+    return this.baseRepository.findSagaByIdempotencyKey(idempotencyKey);
+  }
+
+  async updateSaga(input: UpdateSagaInput): Promise<void> {
+    await this.baseRepository.updateSaga(input);
+  }
+
+  async compensateTransaction(input: CompensateTransactionInput): Promise<void> {
+    await this.baseRepository.compensateTransaction(input);
+    try {
+      const balance = await this.baseRepository.getBalance(input.walletId);
+      await this.redis.set(
+        this.balanceKey(input.walletId),
+        balance.toString(),
+        "EX",
+        60
+      );
+    } catch {}
   }
 
   private balanceKey(walletId: string): string {

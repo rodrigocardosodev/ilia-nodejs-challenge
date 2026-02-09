@@ -2,6 +2,10 @@ import { Pool, QueryResult } from "pg";
 import {
   ApplyTransactionInput,
   ApplyTransactionResult,
+  CompensateTransactionInput,
+  CreateSagaInput,
+  SagaRecord,
+  UpdateSagaInput,
   TransactionRecord,
   TransferBetweenUsersInput,
   TransferBetweenUsersResult,
@@ -387,5 +391,139 @@ export class WalletPostgresRepository implements WalletRepository {
       amount: Number(row.amount),
       createdAt: new Date(row.created_at)
     }));
+  }
+
+  async createSaga(input: CreateSagaInput): Promise<void> {
+    await this.timedQuery(
+      this.pool,
+      `
+        INSERT INTO wallet_sagas
+          (id, wallet_id, idempotency_key, transaction_id, type, amount, status, step)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (idempotency_key) DO NOTHING
+      `,
+      [
+        input.id,
+        input.walletId,
+        input.idempotencyKey,
+        input.transactionId ?? null,
+        input.type,
+        input.amount,
+        input.status,
+        input.step
+      ],
+      "create_saga"
+    );
+  }
+
+  async findSagaByIdempotencyKey(
+    idempotencyKey: string
+  ): Promise<SagaRecord | null> {
+    const result = await this.timedQuery(
+      this.pool,
+      `
+        SELECT
+          id,
+          wallet_id,
+          idempotency_key,
+          transaction_id,
+          type,
+          amount,
+          status,
+          step,
+          created_at,
+          updated_at
+        FROM wallet_sagas
+        WHERE idempotency_key = $1
+        LIMIT 1
+      `,
+      [idempotencyKey],
+      "find_saga_by_idempotency_key"
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      walletId: row.wallet_id,
+      idempotencyKey: row.idempotency_key,
+      transactionId: row.transaction_id,
+      type: row.type,
+      amount: Number(row.amount),
+      status: row.status,
+      step: row.step,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    };
+  }
+
+  async updateSaga(input: UpdateSagaInput): Promise<void> {
+    await this.timedQuery(
+      this.pool,
+      `
+        UPDATE wallet_sagas
+        SET status = $2,
+            step = $3,
+            transaction_id = COALESCE($4, transaction_id),
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [input.id, input.status, input.step, input.transactionId ?? null],
+      "update_saga"
+    );
+  }
+
+  async compensateTransaction(input: CompensateTransactionInput): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.timedQuery(
+        client,
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
+        [input.walletId],
+        "ensure_wallet"
+      );
+      const existing = await this.timedQuery(
+        client,
+        "SELECT id FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+        [input.walletId, input.idempotencyKey],
+        "idempotency_check"
+      );
+      if ((existing.rowCount ?? 0) > 0) {
+        await client.query("COMMIT");
+        return;
+      }
+      const walletResult = await this.timedQuery(
+        client,
+        "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
+        [input.walletId],
+        "lock_wallet"
+      );
+      const currentBalance = Number(walletResult.rows[0].balance);
+      const nextBalance =
+        input.type === "credit"
+          ? currentBalance + input.amount
+          : currentBalance - input.amount;
+      await this.timedQuery(
+        client,
+        "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4)",
+        [input.walletId, input.type, input.amount, input.idempotencyKey],
+        "insert_compensation_transaction"
+      );
+      await this.timedQuery(
+        client,
+        "UPDATE wallets SET balance = $1, version = version + 1 WHERE id = $2",
+        [nextBalance, input.walletId],
+        "update_balance"
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

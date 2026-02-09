@@ -35,6 +35,46 @@ export type TransactionRecord = {
   createdAt: Date;
 };
 
+export type SagaStatus = "pending" | "completed" | "compensated" | "failed";
+
+export type SagaRecord = {
+  id: string;
+  walletId: string;
+  idempotencyKey: string;
+  transactionId: string | null;
+  type: TransactionType;
+  amount: number;
+  status: SagaStatus;
+  step: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateSagaInput = {
+  id: string;
+  walletId: string;
+  idempotencyKey: string;
+  transactionId?: string;
+  type: TransactionType;
+  amount: number;
+  status: SagaStatus;
+  step: string;
+};
+
+export type UpdateSagaInput = {
+  id: string;
+  transactionId?: string;
+  status: SagaStatus;
+  step: string;
+};
+
+export type CompensateTransactionInput = {
+  walletId: string;
+  type: TransactionType;
+  amount: number;
+  idempotencyKey: string;
+};
+
 export interface WalletRepository {
   ensureWallet(walletId: string): Promise<void>;
   getBalance(walletId: string): Promise<number>;
@@ -46,4 +86,8 @@ export interface WalletRepository {
     walletId: string,
     type?: TransactionType
   ): Promise<TransactionRecord[]>;
+  createSaga(input: CreateSagaInput): Promise<void>;
+  findSagaByIdempotencyKey(idempotencyKey: string): Promise<SagaRecord | null>;
+  updateSaga(input: UpdateSagaInput): Promise<void>;
+  compensateTransaction(input: CompensateTransactionInput): Promise<void>;
 }
