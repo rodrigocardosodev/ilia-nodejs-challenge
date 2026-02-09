@@ -3,10 +3,7 @@ import { WalletController } from "./WalletController";
 import { AuthConfig, authMiddleware } from "../../../shared/http/authMiddleware";
 import { asyncHandler } from "../../../shared/http/asyncHandler";
 
-export const buildWalletRoutes = (
-  controller: WalletController,
-  authConfig: AuthConfig
-): Router => {
+export const buildWalletRoutes = (controller: WalletController, authConfig: AuthConfig): Router => {
   const router = Router();
   router.use(authMiddleware(authConfig));
   router.post("/transactions", asyncHandler(controller.createTransaction));

@@ -6,13 +6,12 @@ import { Metrics } from "../../../shared/observability/metrics";
 import { AppError } from "../../../shared/http/AppError";
 
 export class UserMongoRepository implements UserRepository {
-  constructor(private readonly metrics: Metrics) { }
+  constructor(private readonly metrics: Metrics) {}
 
   private async timed<T>(operation: string, fn: () => Promise<T>): Promise<T> {
     const start = process.hrtime.bigint();
     const result = await fn();
-    const durationSeconds =
-      Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
     this.metrics.recordDbQuery("mongo", operation, durationSeconds);
     return result;
   }
@@ -48,9 +47,7 @@ export class UserMongoRepository implements UserRepository {
   }
 
   async findById(id: string): Promise<User | null> {
-    const doc = await this.timed("find_user_by_id", () =>
-      UserModel.findById(id).lean()
-    );
+    const doc = await this.timed("find_user_by_id", () => UserModel.findById(id).lean());
     if (!doc) {
       return null;
     }
@@ -97,10 +94,7 @@ export class UserMongoRepository implements UserRepository {
     );
   }
 
-  async updateById(
-    id: string,
-    input: Omit<CreateUserInput, "id">
-  ): Promise<User | null> {
+  async updateById(id: string, input: Omit<CreateUserInput, "id">): Promise<User | null> {
     const normalizedEmail = input.email.toLowerCase();
     try {
       const doc = await this.timed("update_user", () =>
@@ -135,9 +129,7 @@ export class UserMongoRepository implements UserRepository {
   }
 
   async deleteById(id: string): Promise<boolean> {
-    const result = await this.timed("delete_user", () =>
-      UserModel.deleteOne({ _id: id })
-    );
+    const result = await this.timed("delete_user", () => UserModel.deleteOne({ _id: id }));
     return (result.deletedCount ?? 0) > 0;
   }
 }

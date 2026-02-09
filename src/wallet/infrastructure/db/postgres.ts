@@ -17,4 +17,3 @@ export const createPool = (config: PostgresConfig): Pool => {
     database: config.database
   });
 };
-

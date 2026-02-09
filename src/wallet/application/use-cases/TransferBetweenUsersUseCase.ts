@@ -25,9 +25,7 @@ export class TransferBetweenUsersUseCase {
     private readonly logger: Logger
   ) {}
 
-  async execute(
-    input: TransferBetweenUsersInput
-  ): Promise<TransferBetweenUsersOutput> {
+  async execute(input: TransferBetweenUsersInput): Promise<TransferBetweenUsersOutput> {
     if (input.fromWalletId === input.toWalletId) {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }

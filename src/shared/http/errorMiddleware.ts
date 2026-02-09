@@ -14,10 +14,8 @@ export const createErrorMiddleware =
   (logger: Logger) =>
   (error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
     const resolved = resolveError(error);
-    const originalMessage =
-      error instanceof Error ? error.message : String(error);
-    const originalStack =
-      error instanceof Error ? error.stack : undefined;
+    const originalMessage = error instanceof Error ? error.message : String(error);
+    const originalStack = error instanceof Error ? error.stack : undefined;
     logger.error("Request failed", {
       code: resolved.code,
       statusCode: resolved.statusCode,

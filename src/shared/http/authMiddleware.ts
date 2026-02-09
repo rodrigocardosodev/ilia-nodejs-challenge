@@ -25,8 +25,7 @@ export const authMiddleware =
 
     try {
       const payload = jwt.verify(token, config.jwtKey, { algorithms: ["HS256"] }) as jwt.JwtPayload;
-      const userId =
-        typeof payload.sub === "string" ? payload.sub : (payload.userId as string);
+      const userId = typeof payload.sub === "string" ? payload.sub : (payload.userId as string);
       if (!userId) {
         config.metrics.recordAuthFailure("missing_user");
         next(new AppError("UNAUTHORIZED", 401, "Unauthorized"));

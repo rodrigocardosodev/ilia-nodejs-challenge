@@ -23,8 +23,7 @@ dotenv.config();
 
 const port = Number(process.env.PORT ?? 3001);
 const jwtKey = process.env.JWT_PRIVATE_KEY ?? "ILIACHALLENGE";
-const internalJwtKey =
-  process.env.INTERNAL_JWT_PRIVATE_KEY ?? "ILIACHALLENGE_INTERNAL";
+const internalJwtKey = process.env.INTERNAL_JWT_PRIVATE_KEY ?? "ILIACHALLENGE_INTERNAL";
 
 const pool = createPool({
   host: process.env.PG_HOST ?? "localhost",
@@ -52,7 +51,8 @@ const kafkaPublisher = new KafkaEventPublisher(
 const walletRepository = new CachedWalletRepository(
   redis,
   new WalletPostgresRepository(pool, metrics),
-  metrics
+  metrics,
+  logger
 );
 
 const createTransactionUseCase = new CreateTransactionUseCase(
@@ -95,11 +95,7 @@ app.use(
 app.use(
   "/",
   buildWalletRoutes(
-    new WalletController(
-      createTransactionUseCase,
-      getBalanceUseCase,
-      listTransactionsUseCase
-    ),
+    new WalletController(createTransactionUseCase, getBalanceUseCase, listTransactionsUseCase),
     {
       jwtKey,
       metrics

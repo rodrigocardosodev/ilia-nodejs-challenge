@@ -122,35 +122,34 @@ sequenceDiagram
     participant PasswordHasher
     participant Kafka
 
-    Client->>UsersAPI: POST /users (name,email,password)
-    UsersAPI->>RegisterUseCase: execute(name,email,password)
-    RegisterUseCase->>UsersRepo: findByEmail(email)
+    Client->>UsersAPI: POST /users (first_name,last_name,email,password)
+    UsersAPI->>RegisterUseCase: execute
+    RegisterUseCase->>UsersRepo: findByEmail
     UsersRepo->>Redis: get users:email
     alt cache hit
         Redis-->>UsersRepo: userId
-        UsersRepo->>Redis: get users:id
-        Redis-->>UsersRepo: user
+        UsersRepo->>MongoDB: findById(userId)
+        MongoDB-->>UsersRepo: user | null
     else cache miss
         UsersRepo->>MongoDB: findOne(email)
         MongoDB-->>UsersRepo: user | null
-        UsersRepo->>Redis: set cache (se user)
     end
     alt user existe
         RegisterUseCase-->>UsersAPI: user (created=false)
-        UsersAPI-->>Client: 200 ok
-    else novo usuário
-        RegisterUseCase->>PasswordHasher: hash(password)
-        RegisterUseCase->>UsersRepo: create(user)
+        UsersAPI-->>Client: 201 created
+    else novo usuario
+        RegisterUseCase->>PasswordHasher: hash password
+        RegisterUseCase->>UsersRepo: create user
         UsersRepo->>MongoDB: insert
         MongoDB-->>UsersRepo: ok
-        UsersRepo->>Redis: set user + email
+        UsersRepo->>Redis: set users:id + users:email
         RegisterUseCase->>Kafka: publish users.created
         RegisterUseCase-->>UsersAPI: user (created=true)
         UsersAPI-->>Client: 201 created
     end
 ```
 
-### Login (`POST /login`)
+### Login (`POST /auth`)
 ```mermaid
 sequenceDiagram
     participant Client
@@ -162,105 +161,106 @@ sequenceDiagram
     participant PasswordHasher
     participant JWT
 
-    Client->>UsersAPI: POST /login (email,password)
-    UsersAPI->>AuthUseCase: execute(email,password)
-    AuthUseCase->>UsersRepo: findByEmail(email)
+    Client->>UsersAPI: POST /auth (email,password)
+    UsersAPI->>AuthUseCase: execute
+    AuthUseCase->>UsersRepo: findByEmail
     UsersRepo->>Redis: get users:email
     alt cache hit
         Redis-->>UsersRepo: userId
-        UsersRepo->>Redis: get users:id
-        Redis-->>UsersRepo: user
+        UsersRepo->>MongoDB: findById(userId)
+        MongoDB-->>UsersRepo: user | null
     else cache miss
         UsersRepo->>MongoDB: findOne(email)
         MongoDB-->>UsersRepo: user | null
-        UsersRepo->>Redis: set cache (se user)
+        UsersRepo->>Redis: set users:id + users:email
     end
-    alt credenciais inválidas
+    alt credenciais invalidas
         AuthUseCase-->>UsersAPI: error UNAUTHORIZED
         UsersAPI-->>Client: 401 Invalid credentials
     else ok
-        AuthUseCase->>PasswordHasher: compare(password, hash)
+        AuthUseCase->>PasswordHasher: compare password
         PasswordHasher-->>AuthUseCase: valid
-        UsersAPI->>JWT: sign(sub=userId, exp=1h)
+        UsersAPI->>JWT: sign
         UsersAPI-->>Client: 200 token + user
     end
 ```
 
-### Consulta do próprio usuário (`GET /users/me`)
+### Consulta de usuario por id (`GET /users/:id`)
 ```mermaid
 sequenceDiagram
     participant Client
     participant UsersAPI
     participant Auth
-    participant UsersUseCase
+    participant GetUserUseCase
     participant UsersRepo
     participant Redis
     participant MongoDB
 
-    Client->>UsersAPI: GET /users/me (JWT)
+    Client->>UsersAPI: GET /users/:id (JWT)
     UsersAPI->>Auth: validate JWT
     Auth-->>UsersAPI: userId
-    UsersAPI->>UsersUseCase: getUser(userId)
-    UsersUseCase->>UsersRepo: findById(userId)
-    UsersRepo->>Redis: get cache
+    UsersAPI->>UsersAPI: validate ownership
+    UsersAPI->>GetUserUseCase: execute(userId)
+    GetUserUseCase->>UsersRepo: findById
+    UsersRepo->>Redis: get users:id
     alt cache hit
         Redis-->>UsersRepo: user
-        UsersRepo-->>UsersUseCase: user
+        UsersRepo-->>GetUserUseCase: user
     else cache miss
         UsersRepo->>MongoDB: findById
         MongoDB-->>UsersRepo: user | null
-        UsersRepo->>Redis: set cache (if user)
-        UsersRepo-->>UsersUseCase: user | null
+        UsersRepo->>Redis: set users:id
+        UsersRepo-->>GetUserUseCase: user | null
     end
     alt not found
-        UsersUseCase-->>UsersAPI: error NOT_FOUND
+        GetUserUseCase-->>UsersAPI: error NOT_FOUND
         UsersAPI-->>Client: 404 User not found
     else found
         UsersAPI-->>Client: 200 user
     end
 ```
 
-### Transação na carteira (`POST /wallet/transactions`)
+### Transacao na carteira (`POST /wallet/transactions`)
 ```mermaid
 sequenceDiagram
     participant Client
     participant WalletAPI
     participant Auth
-    participant WalletUseCase
+    participant CreateTransactionUseCase
     participant WalletRepo
     participant Redis
     participant Postgres
     participant Kafka
 
-    Client->>WalletAPI: POST /wallet/transactions (type,amountCents,idempotencyKey, JWT)
+    Client->>WalletAPI: POST /wallet/transactions (type,amount, Idempotency-Key, JWT)
     WalletAPI->>Auth: validate JWT
     Auth-->>WalletAPI: walletId
-    WalletAPI->>WalletUseCase: createTransaction(...)
-    WalletUseCase->>WalletRepo: applyTransaction(...)
-    WalletRepo->>Postgres: BEGIN
-    WalletRepo->>Postgres: ensure wallet
-    WalletRepo->>Postgres: check idempotency
-    alt já processada
-        WalletRepo->>Postgres: get balance
-        WalletRepo->>Postgres: COMMIT
-        WalletRepo-->>WalletUseCase: result
-    else nova transação
-        WalletRepo->>Postgres: lock wallet row
-        WalletRepo->>Postgres: insert transaction
-        WalletRepo->>Postgres: update balance
+    WalletAPI->>CreateTransactionUseCase: execute
+    CreateTransactionUseCase->>WalletRepo: findSagaByIdempotencyKey
+    alt saga completed
+        WalletRepo-->>CreateTransactionUseCase: saga completed
+        CreateTransactionUseCase->>WalletRepo: applyTransaction
+        WalletRepo->>Postgres: apply transaction
+        WalletRepo->>Redis: set balance cache
+        CreateTransactionUseCase-->>WalletAPI: result
+        WalletAPI-->>Client: 201 created
+    else saga pending
+        CreateTransactionUseCase-->>WalletAPI: 409 conflict
+    else nova saga
+        CreateTransactionUseCase->>WalletRepo: createSaga pending
+        CreateTransactionUseCase->>WalletRepo: applyTransaction
+        WalletRepo->>Postgres: apply transaction
         alt saldo insuficiente
-            WalletRepo->>Postgres: ROLLBACK
-            WalletUseCase-->>WalletAPI: error INSUFFICIENT_FUNDS
-            WalletAPI-->>Client: 422 Insufficient funds
+            CreateTransactionUseCase-->>WalletAPI: 422 Insufficient funds
         else ok
-            WalletRepo->>Postgres: COMMIT
-            WalletRepo->>Redis: update balance cache
-            WalletRepo-->>WalletUseCase: result
+            WalletRepo->>Redis: set balance cache
+            CreateTransactionUseCase->>WalletRepo: updateSaga publish_event
+            CreateTransactionUseCase->>Kafka: publish wallet.transaction.created
+            CreateTransactionUseCase->>WalletRepo: updateSaga completed
+            CreateTransactionUseCase-->>WalletAPI: result
+            WalletAPI-->>Client: 201 created
         end
     end
-    WalletUseCase->>Kafka: publish wallet.transaction.created (topic wallet.transactions)
-    WalletUseCase-->>WalletAPI: result
-    WalletAPI-->>Client: 201 created
 ```
 
 ### Consulta de saldo (`GET /wallet/balance`)
@@ -277,60 +277,68 @@ sequenceDiagram
     Client->>WalletAPI: GET /wallet/balance (JWT)
     WalletAPI->>Auth: validate JWT
     Auth-->>WalletAPI: walletId
-    WalletAPI->>WalletUseCase: getBalance(walletId)
-    WalletUseCase->>WalletRepo: getBalance(walletId)
-    WalletRepo->>Redis: get cache
+    WalletAPI->>WalletUseCase: getBalance
+    WalletUseCase->>WalletRepo: getBalance
+    WalletRepo->>Redis: get wallet:balance
     alt cache hit
         Redis-->>WalletRepo: balance
     else cache miss
         WalletRepo->>Postgres: select balance
         Postgres-->>WalletRepo: balance | 0
-        WalletRepo->>Redis: set cache
+        WalletRepo->>Redis: set wallet:balance
     end
     WalletUseCase-->>WalletAPI: balance
-    WalletAPI-->>Client: 200 balanceCents
+    WalletAPI-->>Client: 200 amount
 ```
 
-### Evento `users.created` -> criação da wallet (Kafka)
+### Evento `users.created` -> criacao da wallet (Kafka)
 ```mermaid
 sequenceDiagram
     participant UsersService
     participant Kafka
-    participant WalletConsumer
+    participant WalletKafkaConsumer
     participant InternalAuth
     participant EnsureWalletUseCase
     participant WalletRepo
     participant Postgres
+    participant DLQ
 
     UsersService->>Kafka: publish users.created (x-internal-jwt)
-    Kafka-->>WalletConsumer: users.created
-    WalletConsumer->>InternalAuth: verify internal jwt
-    InternalAuth-->>WalletConsumer: ok
-    WalletConsumer->>EnsureWalletUseCase: ensureWallet(userId)
-    EnsureWalletUseCase->>WalletRepo: ensureWallet(userId)
-    WalletRepo->>Postgres: insert wallet if not exists
-    Postgres-->>WalletRepo: ok
+    Kafka-->>WalletKafkaConsumer: users.created
+    WalletKafkaConsumer->>InternalAuth: verify internal jwt
+    alt invalid token
+        WalletKafkaConsumer->>DLQ: send users.created.dlq
+    else ok
+        WalletKafkaConsumer->>EnsureWalletUseCase: ensureWallet(userId)
+        EnsureWalletUseCase->>WalletRepo: ensureWallet
+        WalletRepo->>Postgres: insert wallet if not exists
+        Postgres-->>WalletRepo: ok
+    end
 ```
 
-### Evento `wallet.transaction.created` -> atualização no Users (Kafka)
+### Evento `wallet.transaction.created` -> atualizacao no Users (Kafka)
 ```mermaid
 sequenceDiagram
     participant WalletService
     participant Kafka
-    participant UsersConsumer
+    participant UsersKafkaConsumer
     participant InternalAuth
     participant RecordWalletEventUseCase
     participant WalletEventRepo
     participant Redis
+    participant DLQ
 
     WalletService->>Kafka: publish wallet.transaction.created (topic wallet.transactions)
-    Kafka-->>UsersConsumer: wallet.transactions
-    UsersConsumer->>InternalAuth: verify internal jwt
-    InternalAuth-->>UsersConsumer: ok
-    UsersConsumer->>RecordWalletEventUseCase: recordLatestTransaction(userId, txId, occurredAt)
-    RecordWalletEventUseCase->>WalletEventRepo: recordLatestTransaction(...)
-    WalletEventRepo->>Redis: set last wallet tx
-    Redis-->>WalletEventRepo: ok
+    Kafka-->>UsersKafkaConsumer: wallet.transactions
+    UsersKafkaConsumer->>InternalAuth: verify internal jwt
+    alt invalid token
+        UsersKafkaConsumer->>DLQ: send wallet.transactions.dlq
+    else ok
+        UsersKafkaConsumer->>RecordWalletEventUseCase: execute(walletId, transactionId, occurredAt)
+        RecordWalletEventUseCase->>WalletEventRepo: recordLatestTransaction
+        WalletEventRepo->>Redis: set users:last-wallet-tx
+        Redis-->>WalletEventRepo: ok
+    end
 ```
 
 ## Kafka

@@ -2,13 +2,15 @@ import Redis from "ioredis";
 import { CreateUserInput, UserRepository } from "../../domain/repositories/UserRepository";
 import { User } from "../../domain/entities/User";
 import { Metrics } from "../../../shared/observability/metrics";
+import { Logger } from "../../../shared/observability/logger";
 
 export class CachedUserRepository implements UserRepository {
   constructor(
     private readonly redis: Redis,
     private readonly baseRepository: UserRepository,
-    private readonly metrics: Metrics
-  ) { }
+    private readonly metrics: Metrics,
+    private readonly logger: Logger
+  ) {}
 
   async create(input: CreateUserInput): Promise<User> {
     const user = await this.baseRepository.create(input);
@@ -20,7 +22,12 @@ export class CachedUserRepository implements UserRepository {
         120
       );
       await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
-    } catch { }
+    } catch (error) {
+      this.logger.warn("Failed to cache user after create", {
+        userId: user.id,
+        error: String(error)
+      });
+    }
     return user;
   }
 
@@ -41,18 +48,23 @@ export class CachedUserRepository implements UserRepository {
           );
         }
       }
-    } catch { }
+    } catch (error) {
+      this.logger.warn("Failed to read user cache by id", {
+        userId: id,
+        error: String(error)
+      });
+    }
     this.metrics.recordCacheMiss("users_by_id");
     const user = await this.baseRepository.findById(id);
     if (user) {
       try {
-        await this.redis.set(
-          this.userKey(id),
-          JSON.stringify(this.toCacheData(user)),
-          "EX",
-          120
-        );
-      } catch { }
+        await this.redis.set(this.userKey(id), JSON.stringify(this.toCacheData(user)), "EX", 120);
+      } catch (error) {
+        this.logger.warn("Failed to update user cache by id", {
+          userId: id,
+          error: String(error)
+        });
+      }
     }
     return user;
   }
@@ -64,7 +76,12 @@ export class CachedUserRepository implements UserRepository {
         this.metrics.recordCacheHit("users_by_email");
         return this.baseRepository.findById(cachedId);
       }
-    } catch { }
+    } catch (error) {
+      this.logger.warn("Failed to read user cache by email", {
+        email,
+        error: String(error)
+      });
+    }
     this.metrics.recordCacheMiss("users_by_email");
     const user = await this.baseRepository.findByEmail(email);
     if (user) {
@@ -76,7 +93,13 @@ export class CachedUserRepository implements UserRepository {
           120
         );
         await this.redis.set(this.emailKey(email), user.id, "EX", 120);
-      } catch { }
+      } catch (error) {
+        this.logger.warn("Failed to update user cache by email", {
+          userId: user.id,
+          email,
+          error: String(error)
+        });
+      }
     }
     return user;
   }
@@ -85,10 +108,7 @@ export class CachedUserRepository implements UserRepository {
     return this.baseRepository.findAll();
   }
 
-  async updateById(
-    id: string,
-    input: Omit<CreateUserInput, "id">
-  ): Promise<User | null> {
+  async updateById(id: string, input: Omit<CreateUserInput, "id">): Promise<User | null> {
     const user = await this.baseRepository.updateById(id, input);
     if (!user) {
       return null;
@@ -101,7 +121,12 @@ export class CachedUserRepository implements UserRepository {
         120
       );
       await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
-    } catch {}
+    } catch (error) {
+      this.logger.warn("Failed to update user cache after update", {
+        userId: user.id,
+        error: String(error)
+      });
+    }
     return user;
   }
 
@@ -112,7 +137,12 @@ export class CachedUserRepository implements UserRepository {
       try {
         await this.redis.del(this.userKey(id));
         await this.redis.del(this.emailKey(user.email));
-      } catch {}
+      } catch (error) {
+        this.logger.warn("Failed to remove user cache after delete", {
+          userId: id,
+          error: String(error)
+        });
+      }
     }
     return deleted;
   }

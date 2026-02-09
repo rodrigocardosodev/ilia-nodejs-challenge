@@ -20,7 +20,7 @@ export class RegisterUserUseCase {
     private readonly eventPublisher: EventPublisher,
     private readonly passwordHasher: PasswordHasher,
     private readonly logger: Logger
-  ) { }
+  ) {}
 
   async execute(input: CreateUserInput): Promise<RegisterUserOutput> {
     this.logger.info("User registration started", {

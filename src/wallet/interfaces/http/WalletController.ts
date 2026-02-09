@@ -14,10 +14,7 @@ export class WalletController {
     private readonly listTransactionsUseCase: ListTransactionsUseCase
   ) {}
 
-  createTransaction = async (
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> => {
+  createTransaction = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const walletId = req.userId ?? "";
     if (walletId.length === 0) {
       throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
@@ -48,10 +45,7 @@ export class WalletController {
     });
   };
 
-  deposit = async (
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> => {
+  deposit = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const walletId = req.userId ?? "";
     if (walletId.length === 0) {
       throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
@@ -81,10 +75,7 @@ export class WalletController {
     });
   };
 
-  getBalance = async (
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> => {
+  getBalance = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const walletId = req.userId ?? "";
     if (walletId.length === 0) {
       throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
@@ -94,10 +85,7 @@ export class WalletController {
     res.status(200).json({ amount: balance });
   };
 
-  listTransactions = async (
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> => {
+  listTransactions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const walletId = req.userId ?? "";
     if (walletId.length === 0) {
       throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
@@ -110,15 +98,8 @@ export class WalletController {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }
     const type =
-      parsed.data.type === "CREDIT"
-        ? "credit"
-        : parsed.data.type === "DEBIT"
-          ? "debit"
-          : undefined;
-    const transactions = await this.listTransactionsUseCase.execute(
-      walletId,
-      type
-    );
+      parsed.data.type === "CREDIT" ? "credit" : parsed.data.type === "DEBIT" ? "debit" : undefined;
+    const transactions = await this.listTransactionsUseCase.execute(walletId, type);
     res.status(200).json(
       transactions.map((transaction) => ({
         id: transaction.id,

@@ -30,7 +30,9 @@ export class KafkaEventPublisher implements EventPublisher {
 
   async publish(event: DomainEvent): Promise<void> {
     const topic = this.resolveTopic(event.name);
-    const token = jwt.sign({ iss: this.config.clientId }, this.config.internalJwt, { expiresIn: "5m" });
+    const token = jwt.sign({ iss: this.config.clientId }, this.config.internalJwt, {
+      expiresIn: "5m"
+    });
     const traceId = getTraceId() ?? createTraceId();
     try {
       await this.producer.send({

@@ -156,9 +156,8 @@ export const createMetrics = (service: string): Metrics => {
     res.on("finish", () => {
       const route = req.route
         ? `${req.baseUrl ?? ""}${req.route.path ?? ""}`
-        : req.path ?? "unknown";
-      const durationSeconds =
-        Number(process.hrtime.bigint() - start) / 1_000_000_000;
+        : (req.path ?? "unknown");
+      const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
       const labels = {
         service,
         method: req.method ?? "UNKNOWN",

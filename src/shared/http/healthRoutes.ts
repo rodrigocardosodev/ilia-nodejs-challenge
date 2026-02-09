@@ -2,10 +2,7 @@ import { Router } from "express";
 
 export type HealthCheck = () => Promise<void>;
 
-export const buildHealthRoutes = (
-  liveness: HealthCheck,
-  readiness: HealthCheck
-): Router => {
+export const buildHealthRoutes = (liveness: HealthCheck, readiness: HealthCheck): Router => {
   const router = Router();
   router.get("/health", async (_req, res) => {
     await liveness();

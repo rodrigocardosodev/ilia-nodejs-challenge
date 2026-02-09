@@ -11,10 +11,7 @@ export class ListTransactionsUseCase {
   async execute(walletId: string, type?: TransactionType) {
     this.logger.info("List transactions started", { walletId, type });
     try {
-      const transactions = await this.walletRepository.listTransactions(
-        walletId,
-        type
-      );
+      const transactions = await this.walletRepository.listTransactions(walletId, type);
       this.logger.info("List transactions completed", {
         walletId,
         count: transactions.length

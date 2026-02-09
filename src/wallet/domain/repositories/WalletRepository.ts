@@ -79,13 +79,8 @@ export interface WalletRepository {
   ensureWallet(walletId: string): Promise<void>;
   getBalance(walletId: string): Promise<number>;
   applyTransaction(input: ApplyTransactionInput): Promise<ApplyTransactionResult>;
-  transferBetweenUsers(
-    input: TransferBetweenUsersInput
-  ): Promise<TransferBetweenUsersResult>;
-  listTransactions(
-    walletId: string,
-    type?: TransactionType
-  ): Promise<TransactionRecord[]>;
+  transferBetweenUsers(input: TransferBetweenUsersInput): Promise<TransferBetweenUsersResult>;
+  listTransactions(walletId: string, type?: TransactionType): Promise<TransactionRecord[]>;
   createSaga(input: CreateSagaInput): Promise<void>;
   findSagaByIdempotencyKey(idempotencyKey: string): Promise<SagaRecord | null>;
   updateSaga(input: UpdateSagaInput): Promise<void>;

@@ -12,12 +12,14 @@ import {
   WalletRepository
 } from "../../domain/repositories/WalletRepository";
 import { Metrics } from "../../../shared/observability/metrics";
+import { Logger } from "../../../shared/observability/logger";
 
 export class CachedWalletRepository implements WalletRepository {
   constructor(
     private readonly redis: Redis,
     private readonly baseRepository: WalletRepository,
-    private readonly metrics: Metrics
+    private readonly metrics: Metrics,
+    private readonly logger: Logger
   ) {}
 
   async ensureWallet(walletId: string): Promise<void> {
@@ -32,27 +34,35 @@ export class CachedWalletRepository implements WalletRepository {
         this.metrics.recordCacheHit("wallet_balance");
         return Number(cached);
       }
-    } catch {}
+    } catch (error) {
+      this.logger.warn("Failed to read wallet balance cache", {
+        walletId,
+        error: String(error)
+      });
+    }
     this.metrics.recordCacheMiss("wallet_balance");
     const balance = await this.baseRepository.getBalance(walletId);
     try {
       await this.redis.set(cacheKey, balance.toString(), "EX", 60);
-    } catch {}
+    } catch (error) {
+      this.logger.warn("Failed to update wallet balance cache", {
+        walletId,
+        error: String(error)
+      });
+    }
     return balance;
   }
 
-  async applyTransaction(
-    input: ApplyTransactionInput
-  ): Promise<ApplyTransactionResult> {
+  async applyTransaction(input: ApplyTransactionInput): Promise<ApplyTransactionResult> {
     const result = await this.baseRepository.applyTransaction(input);
     try {
-      await this.redis.set(
-        this.balanceKey(input.walletId),
-        result.balance.toString(),
-        "EX",
-        60
-      );
-    } catch {}
+      await this.redis.set(this.balanceKey(input.walletId), result.balance.toString(), "EX", 60);
+    } catch (error) {
+      this.logger.warn("Failed to update wallet balance cache after transaction", {
+        walletId: input.walletId,
+        error: String(error)
+      });
+    }
     return result;
   }
 
@@ -73,7 +83,13 @@ export class CachedWalletRepository implements WalletRepository {
         "EX",
         60
       );
-    } catch {}
+    } catch (error) {
+      this.logger.warn("Failed to update wallet balance cache after transfer", {
+        fromWalletId: input.fromWalletId,
+        toWalletId: input.toWalletId,
+        error: String(error)
+      });
+    }
     return result;
   }
 
@@ -100,13 +116,13 @@ export class CachedWalletRepository implements WalletRepository {
     await this.baseRepository.compensateTransaction(input);
     try {
       const balance = await this.baseRepository.getBalance(input.walletId);
-      await this.redis.set(
-        this.balanceKey(input.walletId),
-        balance.toString(),
-        "EX",
-        60
-      );
-    } catch {}
+      await this.redis.set(this.balanceKey(input.walletId), balance.toString(), "EX", 60);
+    } catch (error) {
+      this.logger.warn("Failed to update wallet balance cache after compensation", {
+        walletId: input.walletId,
+        error: String(error)
+      });
+    }
   }
 
   private balanceKey(walletId: string): string {

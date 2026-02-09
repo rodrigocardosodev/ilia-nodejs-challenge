@@ -29,11 +29,9 @@ dotenv.config();
 
 const port = Number(process.env.PORT ?? 3002);
 const jwtKey = process.env.JWT_PRIVATE_KEY ?? "ILIACHALLENGE";
-const internalJwtKey =
-  process.env.INTERNAL_JWT_PRIVATE_KEY ?? "ILIACHALLENGE_INTERNAL";
+const internalJwtKey = process.env.INTERNAL_JWT_PRIVATE_KEY ?? "ILIACHALLENGE_INTERNAL";
 
-const mongoUri =
-  process.env.MONGO_URI ?? "mongodb://localhost:27017/users";
+const mongoUri = process.env.MONGO_URI ?? "mongodb://localhost:27017/users";
 
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
 
@@ -53,7 +51,8 @@ const kafkaPublisher = new KafkaEventPublisher(
 const userRepository = new CachedUserRepository(
   redis,
   new UserMongoRepository(metrics),
-  metrics
+  metrics,
+  logger
 );
 
 const passwordHasher = new BcryptPasswordHasher(); // New
@@ -64,20 +63,14 @@ const registerUserUseCase = new RegisterUserUseCase(
   passwordHasher,
   logger
 );
-const authenticateUserUseCase = new AuthenticateUserUseCase( // New
-  userRepository,
-  passwordHasher,
-  logger
-);
+const authenticateUserUseCase = new AuthenticateUserUseCase(userRepository, passwordHasher, logger); // New
 const getUserUseCase = new GetUserUseCase(userRepository, logger);
 const listUsersUseCase = new ListUsersUseCase(userRepository, logger);
 const updateUserUseCase = new UpdateUserUseCase(userRepository, passwordHasher, logger);
 const deleteUserUseCase = new DeleteUserUseCase(userRepository, logger);
 
 const walletEventRepository = new RedisWalletEventRepository(redis);
-const recordWalletEventUseCase = new RecordWalletEventUseCase(
-  walletEventRepository
-);
+const recordWalletEventUseCase = new RecordWalletEventUseCase(walletEventRepository);
 
 const usersConsumer = new UsersKafkaConsumer(
   {
@@ -100,7 +93,7 @@ app.get("/metrics", metrics.metricsHandler);
 app.use(
   "/",
   buildHealthRoutes(
-    async () => { },
+    async () => {},
     async () => {
       if (mongoose.connection.readyState !== 1) {
         throw new Error("Mongo not ready");
@@ -137,8 +130,7 @@ const start = async (): Promise<void> => {
   await usersConsumer.start();
   const metricsInterval = setInterval(() => {
     const state = mongoose.connection.readyState;
-    const poolSize =
-      (mongoose.connection.getClient() as any)?.topology?.s?.poolSize ?? undefined;
+    const poolSize = (mongoose.connection.getClient() as any)?.topology?.s?.poolSize ?? undefined;
     metrics.updateMongoState(state, poolSize);
   }, 10000);
 

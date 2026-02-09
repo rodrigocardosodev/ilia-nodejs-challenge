@@ -15,7 +15,10 @@ import { AppError } from "../../../shared/http/AppError";
 import { Metrics } from "../../../shared/observability/metrics";
 
 export class WalletPostgresRepository implements WalletRepository {
-  constructor(private readonly pool: Pool, private readonly metrics: Metrics) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly metrics: Metrics
+  ) {}
 
   private async timedQuery(
     client: { query: (text: string, params?: any[]) => Promise<QueryResult<any>> },
@@ -25,8 +28,7 @@ export class WalletPostgresRepository implements WalletRepository {
   ): Promise<QueryResult<any>> {
     const start = process.hrtime.bigint();
     const result = await client.query(query, params);
-    const durationSeconds =
-      Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
     this.metrics.recordDbQuery("postgres", operation, durationSeconds);
     return result;
   }
@@ -53,9 +55,7 @@ export class WalletPostgresRepository implements WalletRepository {
     return Number(result.rows[0].balance);
   }
 
-  async applyTransaction(
-    input: ApplyTransactionInput
-  ): Promise<ApplyTransactionResult> {
+  async applyTransaction(input: ApplyTransactionInput): Promise<ApplyTransactionResult> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -98,9 +98,7 @@ export class WalletPostgresRepository implements WalletRepository {
       );
       const currentBalance = Number(walletResult.rows[0].balance);
       const nextBalance =
-        input.type === "credit"
-          ? currentBalance + input.amount
-          : currentBalance - input.amount;
+        input.type === "credit" ? currentBalance + input.amount : currentBalance - input.amount;
 
       if (nextBalance < 0) {
         throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
@@ -185,10 +183,7 @@ export class WalletPostgresRepository implements WalletRepository {
       if ((existingDebit.rowCount ?? 0) > 0) {
         this.metrics.recordIdempotencyHit();
         const debitRow = existingDebit.rows[0];
-        if (
-          debitRow.type !== "debit" ||
-          Number(debitRow.amount) !== input.amount
-        ) {
+        if (debitRow.type !== "debit" || Number(debitRow.amount) !== input.amount) {
           throw new AppError("CONFLICT", 409, "Idempotency conflict");
         }
 
@@ -236,10 +231,7 @@ export class WalletPostgresRepository implements WalletRepository {
         }
 
         const creditRow = existingCredit.rows[0];
-        if (
-          creditRow.type !== "credit" ||
-          Number(creditRow.amount) !== input.amount
-        ) {
+        if (creditRow.type !== "credit" || Number(creditRow.amount) !== input.amount) {
           throw new AppError("CONFLICT", 409, "Idempotency conflict");
         }
 
@@ -336,10 +328,7 @@ export class WalletPostgresRepository implements WalletRepository {
           [input.toWalletId, input.idempotencyKey],
           "idempotency_check"
         );
-        if (
-          (existingDebit.rowCount ?? 0) > 0 &&
-          (existingCredit.rowCount ?? 0) > 0
-        ) {
+        if ((existingDebit.rowCount ?? 0) > 0 && (existingCredit.rowCount ?? 0) > 0) {
           const fromBalanceResult = await this.timedQuery(
             this.pool,
             "SELECT balance FROM wallets WHERE id = $1",
@@ -378,12 +367,7 @@ export class WalletPostgresRepository implements WalletRepository {
       query += " AND type = $2";
     }
     query += " ORDER BY created_at DESC";
-    const result = await this.timedQuery(
-      this.pool,
-      query,
-      params,
-      "list_transactions"
-    );
+    const result = await this.timedQuery(this.pool, query, params, "list_transactions");
     return result.rows.map((row) => ({
       id: row.id,
       walletId: row.wallet_id,
@@ -417,9 +401,7 @@ export class WalletPostgresRepository implements WalletRepository {
     );
   }
 
-  async findSagaByIdempotencyKey(
-    idempotencyKey: string
-  ): Promise<SagaRecord | null> {
+  async findSagaByIdempotencyKey(idempotencyKey: string): Promise<SagaRecord | null> {
     const result = await this.timedQuery(
       this.pool,
       `
@@ -503,9 +485,7 @@ export class WalletPostgresRepository implements WalletRepository {
       );
       const currentBalance = Number(walletResult.rows[0].balance);
       const nextBalance =
-        input.type === "credit"
-          ? currentBalance + input.amount
-          : currentBalance - input.amount;
+        input.type === "credit" ? currentBalance + input.amount : currentBalance - input.amount;
       await this.timedQuery(
         client,
         "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4)",

@@ -13,9 +13,6 @@ export interface UserRepository {
   findById(id: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
   findAll(): Promise<User[]>;
-  updateById(
-    id: string,
-    input: Omit<CreateUserInput, "id">
-  ): Promise<User | null>;
+  updateById(id: string, input: Omit<CreateUserInput, "id">): Promise<User | null>;
   deleteById(id: string): Promise<boolean>;
 }

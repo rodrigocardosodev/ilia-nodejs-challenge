@@ -19,12 +19,9 @@ export class UsersController {
     private readonly updateUserUseCase: UpdateUserUseCase,
     private readonly deleteUserUseCase: DeleteUserUseCase,
     private readonly jwtKey: string
-  ) { }
+  ) {}
 
-  register = async (
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> => {
+  register = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const schema = z.object({
       first_name: z.string().min(2),
       last_name: z.string().min(2),

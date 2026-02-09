@@ -37,11 +37,9 @@ export class UsersKafkaConsumer {
     attempt: number,
     errorMessage: string
   ): Promise<void> {
-    const dlqToken = jwt.sign(
-      { iss: this.config.clientId },
-      this.config.internalJwtKey,
-      { expiresIn: "5m" }
-    );
+    const dlqToken = jwt.sign({ iss: this.config.clientId }, this.config.internalJwtKey, {
+      expiresIn: "5m"
+    });
     await this.producer.send({
       topic: "wallet.transactions.dlq",
       messages: [
@@ -99,11 +97,7 @@ export class UsersKafkaConsumer {
                 typeof transactionId === "string" &&
                 typeof occurredAt === "string"
               ) {
-                await this.recordWalletEventUseCase.execute(
-                  userId,
-                  transactionId,
-                  occurredAt
-                );
+                await this.recordWalletEventUseCase.execute(userId, transactionId, occurredAt);
               }
             });
             this.logger.info("Kafka message processed", { topic });

@@ -37,11 +37,9 @@ export class WalletKafkaConsumer {
     attempt: number,
     errorMessage: string
   ): Promise<void> {
-    const dlqToken = jwt.sign(
-      { iss: this.config.clientId },
-      this.config.internalJwtKey,
-      { expiresIn: "5m" }
-    );
+    const dlqToken = jwt.sign({ iss: this.config.clientId }, this.config.internalJwtKey, {
+      expiresIn: "5m"
+    });
     await this.producer.send({
       topic: "users.created.dlq",
       messages: [
