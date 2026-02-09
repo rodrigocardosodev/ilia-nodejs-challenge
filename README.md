@@ -60,6 +60,13 @@ Pré-requisitos: Docker e Docker Compose.
 docker-compose up --build
 ```
 
+## Migrations (Postgres)
+Para aplicar as migrations do wallet:
+
+```bash
+npm run migrate:up
+```
+
 ## Variáveis de ambiente
 As variáveis abaixo já estão definidas no `docker-compose.yml` e podem ser ajustadas conforme necessário:
 

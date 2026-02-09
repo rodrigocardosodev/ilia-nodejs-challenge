@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import Redis from "ioredis";
-import { createPool, initSchema } from "./infrastructure/db/postgres";
+import { createPool } from "./infrastructure/db/postgres";
 import { WalletPostgresRepository } from "./infrastructure/db/WalletPostgresRepository";
 import { CachedWalletRepository } from "./infrastructure/cache/CachedWalletRepository";
 import { KafkaEventPublisher } from "./infrastructure/messaging/KafkaEventPublisher";
@@ -111,7 +111,6 @@ app.use(createErrorMiddleware(logger));
 import http from "http";
 
 const start = async (): Promise<void> => {
-  await initSchema(pool);
   await kafkaPublisher.connect();
   await walletConsumer.start();
   const metricsInterval = setInterval(() => {
