@@ -5,6 +5,9 @@ const config: JestConfigWithTsJest = {
   testEnvironment: "node",
   testMatch: ["**/__tests__/**/*.test.ts", "**/?(*.)+(spec|test).ts"],
   moduleFileExtensions: ["ts", "js", "json"],
+  transform: {
+    "^.+\\.ts$": ["ts-jest", { tsconfig: "tsconfig.test.json" }]
+  },
   collectCoverageFrom: ["src/**/*.ts"],
   coveragePathIgnorePatterns: [
     "/node_modules/",
@@ -16,11 +19,6 @@ const config: JestConfigWithTsJest = {
     "/src/shared/http/requestLoggerMiddleware.ts",
     "/src/shared/http/traceMiddleware.ts"
   ],
-  globals: {
-    "ts-jest": {
-      tsconfig: "tsconfig.test.json"
-    }
-  },
   coverageThreshold: {
     global: {
       branches: 85,
