@@ -15,10 +15,6 @@
     {
       "key": "token",
       "value": ""
-    },
-    {
-      "key": "idempotencyKey",
-      "value": "idem-12345678"
     }
   ],
   "item": [
