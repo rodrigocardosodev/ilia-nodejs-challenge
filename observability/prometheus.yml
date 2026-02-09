@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+  - job_name: wallet
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["wallet:3001"]
+  - job_name: users
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["users:3002"]

@@ -1,0 +1,107 @@
+import Redis from "ioredis";
+import { CreateUserInput, UserRepository } from "../../domain/repositories/UserRepository";
+import { User } from "../../domain/entities/User";
+import { Metrics } from "../../../shared/observability/metrics";
+
+export class CachedUserRepository implements UserRepository {
+  constructor(
+    private readonly redis: Redis,
+    private readonly baseRepository: UserRepository,
+    private readonly metrics: Metrics
+  ) { }
+
+  async create(input: CreateUserInput): Promise<User> {
+    const user = await this.baseRepository.create(input);
+    try {
+      await this.redis.set(this.userKey(user.id), JSON.stringify(user), "EX", 120);
+      await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
+    } catch { }
+    return user;
+  }
+
+  async findById(id: string): Promise<User | null> {
+    try {
+      const cached = await this.redis.get(this.userKey(id));
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data.password) {
+          this.metrics.recordCacheHit("users_by_id");
+          return new User(
+            data.id,
+            data.firstName,
+            data.lastName,
+            data.email,
+            data.password,
+            new Date(data.createdAt)
+          );
+        }
+      }
+    } catch { }
+    this.metrics.recordCacheMiss("users_by_id");
+    const user = await this.baseRepository.findById(id);
+    if (user) {
+      try {
+        await this.redis.set(this.userKey(id), JSON.stringify(user), "EX", 120);
+      } catch { }
+    }
+    return user;
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    try {
+      const cachedId = await this.redis.get(this.emailKey(email));
+      if (cachedId) {
+        this.metrics.recordCacheHit("users_by_email");
+        return this.findById(cachedId);
+      }
+    } catch { }
+    this.metrics.recordCacheMiss("users_by_email");
+    const user = await this.baseRepository.findByEmail(email);
+    if (user) {
+      try {
+        await this.redis.set(this.userKey(user.id), JSON.stringify(user), "EX", 120);
+        await this.redis.set(this.emailKey(email), user.id, "EX", 120);
+      } catch { }
+    }
+    return user;
+  }
+
+  async findAll(): Promise<User[]> {
+    return this.baseRepository.findAll();
+  }
+
+  async updateById(
+    id: string,
+    input: Omit<CreateUserInput, "id">
+  ): Promise<User | null> {
+    const user = await this.baseRepository.updateById(id, input);
+    if (!user) {
+      return null;
+    }
+    try {
+      await this.redis.set(this.userKey(user.id), JSON.stringify(user), "EX", 120);
+      await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
+    } catch {}
+    return user;
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const user = await this.baseRepository.findById(id);
+    const deleted = await this.baseRepository.deleteById(id);
+    if (deleted && user) {
+      try {
+        await this.redis.del(this.userKey(id));
+        await this.redis.del(this.emailKey(user.email));
+      } catch {}
+    }
+    return deleted;
+  }
+
+  private userKey(id: string): string {
+    return `users:id:${id}`;
+  }
+
+  private emailKey(email: string): string {
+    return `users:email:${email.toLowerCase()}`;
+  }
+}

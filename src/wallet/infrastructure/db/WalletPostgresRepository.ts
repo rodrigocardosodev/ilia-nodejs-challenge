@@ -1,0 +1,391 @@
+import { Pool, QueryResult } from "pg";
+import {
+  ApplyTransactionInput,
+  ApplyTransactionResult,
+  TransactionRecord,
+  TransferBetweenUsersInput,
+  TransferBetweenUsersResult,
+  WalletRepository
+} from "../../domain/repositories/WalletRepository";
+import { AppError } from "../../../shared/http/AppError";
+import { Metrics } from "../../../shared/observability/metrics";
+
+export class WalletPostgresRepository implements WalletRepository {
+  constructor(private readonly pool: Pool, private readonly metrics: Metrics) {}
+
+  private async timedQuery(
+    client: { query: (text: string, params?: any[]) => Promise<QueryResult<any>> },
+    query: string,
+    params: any[],
+    operation: string
+  ): Promise<QueryResult<any>> {
+    const start = process.hrtime.bigint();
+    const result = await client.query(query, params);
+    const durationSeconds =
+      Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    this.metrics.recordDbQuery("postgres", operation, durationSeconds);
+    return result;
+  }
+
+  async ensureWallet(walletId: string): Promise<void> {
+    await this.timedQuery(
+      this.pool,
+      "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
+      [walletId],
+      "ensure_wallet"
+    );
+  }
+
+  async getBalance(walletId: string): Promise<number> {
+    const result = await this.timedQuery(
+      this.pool,
+      "SELECT balance FROM wallets WHERE id = $1",
+      [walletId],
+      "get_balance"
+    );
+    if (result.rows.length === 0) {
+      return 0;
+    }
+    return Number(result.rows[0].balance);
+  }
+
+  async applyTransaction(
+    input: ApplyTransactionInput
+  ): Promise<ApplyTransactionResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.timedQuery(
+        client,
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
+        [input.walletId],
+        "ensure_wallet"
+      );
+
+      const existing = await this.timedQuery(
+        client,
+        "SELECT id, created_at FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+        [input.walletId, input.idempotencyKey],
+        "idempotency_check"
+      );
+
+      if ((existing.rowCount ?? 0) > 0) {
+        this.metrics.recordIdempotencyHit();
+        const balanceResult = await this.timedQuery(
+          client,
+          "SELECT balance FROM wallets WHERE id = $1",
+          [input.walletId],
+          "get_balance"
+        );
+        await client.query("COMMIT");
+        return {
+          transactionId: existing.rows[0].id,
+          createdAt: existing.rows[0].created_at,
+          balance: Number(balanceResult.rows[0].balance)
+        };
+      }
+
+      this.metrics.recordIdempotencyMiss();
+      const walletResult = await this.timedQuery(
+        client,
+        "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
+        [input.walletId],
+        "lock_wallet"
+      );
+      const currentBalance = Number(walletResult.rows[0].balance);
+      const nextBalance =
+        input.type === "credit"
+          ? currentBalance + input.amount
+          : currentBalance - input.amount;
+
+      if (nextBalance < 0) {
+        throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
+      }
+
+      const transactionResult = await this.timedQuery(
+        client,
+        "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
+        [input.walletId, input.type, input.amount, input.idempotencyKey],
+        "insert_transaction"
+      );
+
+      await this.timedQuery(
+        client,
+        "UPDATE wallets SET balance = $1, version = version + 1 WHERE id = $2",
+        [nextBalance, input.walletId],
+        "update_balance"
+      );
+
+      await client.query("COMMIT");
+      return {
+        transactionId: transactionResult.rows[0].id,
+        createdAt: transactionResult.rows[0].created_at,
+        balance: nextBalance
+      };
+    } catch (error: any) {
+      await client.query("ROLLBACK");
+      if (error instanceof AppError) {
+        throw error;
+      }
+      if (error?.code === "23505") {
+        const existing = await this.timedQuery(
+          this.pool,
+          "SELECT id, created_at FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+          [input.walletId, input.idempotencyKey],
+          "idempotency_check"
+        );
+        const balanceResult = await this.timedQuery(
+          this.pool,
+          "SELECT balance FROM wallets WHERE id = $1",
+          [input.walletId],
+          "get_balance"
+        );
+        return {
+          transactionId: existing.rows[0].id,
+          createdAt: existing.rows[0].created_at,
+          balance: Number(balanceResult.rows[0].balance)
+        };
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async transferBetweenUsers(
+    input: TransferBetweenUsersInput
+  ): Promise<TransferBetweenUsersResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.timedQuery(
+        client,
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
+        [input.fromWalletId],
+        "ensure_wallet"
+      );
+      await this.timedQuery(
+        client,
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
+        [input.toWalletId],
+        "ensure_wallet"
+      );
+
+      const existingDebit = await this.timedQuery(
+        client,
+        "SELECT id, amount, type FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+        [input.fromWalletId, input.idempotencyKey],
+        "idempotency_check"
+      );
+
+      if ((existingDebit.rowCount ?? 0) > 0) {
+        this.metrics.recordIdempotencyHit();
+        const debitRow = existingDebit.rows[0];
+        if (
+          debitRow.type !== "debit" ||
+          Number(debitRow.amount) !== input.amount
+        ) {
+          throw new AppError("CONFLICT", 409, "Idempotency conflict");
+        }
+
+        const existingCredit = await this.timedQuery(
+          client,
+          "SELECT id, amount, type FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+          [input.toWalletId, input.idempotencyKey],
+          "idempotency_check"
+        );
+
+        if ((existingCredit.rowCount ?? 0) === 0) {
+          const receiverWallet = await this.timedQuery(
+            client,
+            "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
+            [input.toWalletId],
+            "lock_wallet"
+          );
+          const currentToBalance = Number(receiverWallet.rows[0].balance);
+          const nextToBalance = currentToBalance + input.amount;
+          const creditResult = await this.timedQuery(
+            client,
+            "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id",
+            [input.toWalletId, "credit", input.amount, input.idempotencyKey],
+            "insert_transaction"
+          );
+          await this.timedQuery(
+            client,
+            "UPDATE wallets SET balance = $1, version = version + 1 WHERE id = $2",
+            [nextToBalance, input.toWalletId],
+            "update_balance"
+          );
+          const fromBalanceResult = await this.timedQuery(
+            client,
+            "SELECT balance FROM wallets WHERE id = $1",
+            [input.fromWalletId],
+            "get_balance"
+          );
+          await client.query("COMMIT");
+          return {
+            debitTransactionId: debitRow.id,
+            creditTransactionId: creditResult.rows[0].id,
+            fromBalance: Number(fromBalanceResult.rows[0].balance),
+            toBalance: nextToBalance
+          };
+        }
+
+        const creditRow = existingCredit.rows[0];
+        if (
+          creditRow.type !== "credit" ||
+          Number(creditRow.amount) !== input.amount
+        ) {
+          throw new AppError("CONFLICT", 409, "Idempotency conflict");
+        }
+
+        const fromBalanceResult = await this.timedQuery(
+          client,
+          "SELECT balance FROM wallets WHERE id = $1",
+          [input.fromWalletId],
+          "get_balance"
+        );
+        const toBalanceResult = await this.timedQuery(
+          client,
+          "SELECT balance FROM wallets WHERE id = $1",
+          [input.toWalletId],
+          "get_balance"
+        );
+        await client.query("COMMIT");
+        return {
+          debitTransactionId: debitRow.id,
+          creditTransactionId: creditRow.id,
+          fromBalance: Number(fromBalanceResult.rows[0].balance),
+          toBalance: Number(toBalanceResult.rows[0].balance)
+        };
+      }
+
+      this.metrics.recordIdempotencyMiss();
+      const senderWallet = await this.timedQuery(
+        client,
+        "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
+        [input.fromWalletId],
+        "lock_wallet"
+      );
+      const receiverWallet = await this.timedQuery(
+        client,
+        "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
+        [input.toWalletId],
+        "lock_wallet"
+      );
+      const currentFromBalance = Number(senderWallet.rows[0].balance);
+      const currentToBalance = Number(receiverWallet.rows[0].balance);
+      const nextFromBalance = currentFromBalance - input.amount;
+      if (nextFromBalance < 0) {
+        throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
+      }
+
+      const debitResult = await this.timedQuery(
+        client,
+        "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id",
+        [input.fromWalletId, "debit", input.amount, input.idempotencyKey],
+        "insert_transaction"
+      );
+      const creditResult = await this.timedQuery(
+        client,
+        "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id",
+        [input.toWalletId, "credit", input.amount, input.idempotencyKey],
+        "insert_transaction"
+      );
+
+      await this.timedQuery(
+        client,
+        "UPDATE wallets SET balance = $1, version = version + 1 WHERE id = $2",
+        [nextFromBalance, input.fromWalletId],
+        "update_balance"
+      );
+      const nextToBalance = currentToBalance + input.amount;
+      await this.timedQuery(
+        client,
+        "UPDATE wallets SET balance = $1, version = version + 1 WHERE id = $2",
+        [nextToBalance, input.toWalletId],
+        "update_balance"
+      );
+
+      await client.query("COMMIT");
+      return {
+        debitTransactionId: debitResult.rows[0].id,
+        creditTransactionId: creditResult.rows[0].id,
+        fromBalance: nextFromBalance,
+        toBalance: nextToBalance
+      };
+    } catch (error: any) {
+      await client.query("ROLLBACK");
+      if (error instanceof AppError) {
+        throw error;
+      }
+      if (error?.code === "23505") {
+        const existingDebit = await this.timedQuery(
+          this.pool,
+          "SELECT id, amount, type FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+          [input.fromWalletId, input.idempotencyKey],
+          "idempotency_check"
+        );
+        const existingCredit = await this.timedQuery(
+          this.pool,
+          "SELECT id, amount, type FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
+          [input.toWalletId, input.idempotencyKey],
+          "idempotency_check"
+        );
+        if (
+          (existingDebit.rowCount ?? 0) > 0 &&
+          (existingCredit.rowCount ?? 0) > 0
+        ) {
+          const fromBalanceResult = await this.timedQuery(
+            this.pool,
+            "SELECT balance FROM wallets WHERE id = $1",
+            [input.fromWalletId],
+            "get_balance"
+          );
+          const toBalanceResult = await this.timedQuery(
+            this.pool,
+            "SELECT balance FROM wallets WHERE id = $1",
+            [input.toWalletId],
+            "get_balance"
+          );
+          return {
+            debitTransactionId: existingDebit.rows[0].id,
+            creditTransactionId: existingCredit.rows[0].id,
+            fromBalance: Number(fromBalanceResult.rows[0].balance),
+            toBalance: Number(toBalanceResult.rows[0].balance)
+          };
+        }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listTransactions(
+    walletId: string,
+    type?: "credit" | "debit"
+  ): Promise<TransactionRecord[]> {
+    const params: any[] = [walletId];
+    let query =
+      "SELECT id, wallet_id, type, amount, created_at FROM transactions WHERE wallet_id = $1";
+    if (type) {
+      params.push(type);
+      query += " AND type = $2";
+    }
+    query += " ORDER BY created_at DESC";
+    const result = await this.timedQuery(
+      this.pool,
+      query,
+      params,
+      "list_transactions"
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      walletId: row.wallet_id,
+      type: row.type,
+      amount: Number(row.amount),
+      createdAt: new Date(row.created_at)
+    }));
+  }
+}

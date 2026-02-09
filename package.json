@@ -1,0 +1,55 @@
+{
+  "name": "ilia-nodejs-challenge",
+  "version": "1.0.0",
+  "description": "**English** ##### Before we start ⚠️ **Please create a fork from this repository**",
+  "main": "dist/wallet/index.js",
+  "scripts": {
+    "dev:wallet": "ts-node-dev --respawn --transpile-only src/wallet/index.ts",
+    "dev:users": "ts-node-dev --respawn --transpile-only src/users/index.ts",
+    "build:wallet": "tsc -p tsconfig.wallet.json",
+    "build:users": "tsc -p tsconfig.users.json",
+    "build": "npm run build:wallet && npm run build:users",
+    "start:wallet": "node dist/wallet/index.js",
+    "start:users": "node dist/users/index.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rodrigocardosodev/ilia-nodejs-challenge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/rodrigocardosodev/ilia-nodejs-challenge/issues"
+  },
+  "homepage": "https://github.com/rodrigocardosodev/ilia-nodejs-challenge#readme",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "ioredis": "^5.4.2",
+    "jsonwebtoken": "^9.0.2",
+    "kafkajs": "^2.2.4",
+    "mongoose": "^8.18.0",
+    "pg": "^8.16.3",
+    "prom-client": "^15.1.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.2.2",
+    "@types/pg": "^8.16.0",
+    "@types/jest": "^29.5.14",
+    "@types/supertest": "^2.0.16",
+    "jest": "^29.7.0",
+    "supertest": "^7.1.3",
+    "ts-jest": "^29.2.6",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}

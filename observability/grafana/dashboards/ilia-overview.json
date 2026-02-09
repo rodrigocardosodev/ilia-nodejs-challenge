@@ -1,0 +1,233 @@
+{
+  "id": null,
+  "uid": "ilia-overview",
+  "title": "Ilia Services Overview",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "uid": "prometheus", "type": "prometheus" },
+        "definition": "label_values(http_requests_total, service)",
+        "query": "label_values(http_requests_total, service)",
+        "current": {
+          "text": "wallet",
+          "value": "wallet"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "CPU Usage (s/s)",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(process_cpu_user_seconds_total{service=\"$service\"}[5m]) + rate(process_cpu_system_seconds_total{service=\"$service\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory (bytes)",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{service=\"$service\"}",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Requests (rate)",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{service=\"$service\"}[5m])) by (service, route)",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Latency P90/P95/P99",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le, route))",
+          "legendFormat": "p90 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le, route))",
+          "legendFormat": "p95 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le, route))",
+          "legendFormat": "p99 {{route}}"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Error Rate (5xx)",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{service=\"$service\",status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"$service\"}[5m]))",
+          "legendFormat": "error_rate"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 6, "w": 6, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB Query Latency P95",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(db_query_duration_seconds_bucket{service=\"$service\"}[5m])) by (le, db, operation))",
+          "legendFormat": "{{db}} {{operation}}"
+        }
+      ],
+      "gridPos": { "x": 18, "y": 6, "w": 6, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache Hit/Miss Rate",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cache_hits_total{service=\"$service\"}[5m])) by (cache)",
+          "legendFormat": "hit {{cache}}"
+        },
+        {
+          "expr": "sum(rate(cache_misses_total{service=\"$service\"}[5m])) by (cache)",
+          "legendFormat": "miss {{cache}}"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Auth Failures",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(auth_failures_total{service=~\"$service\"}[5m])) by (reason)",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Idempotency Hits/Misses",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(idempotency_hits_total{service=~\"$service\"}[5m]))",
+          "legendFormat": "hits"
+        },
+        {
+          "expr": "sum(rate(idempotency_misses_total{service=~\"$service\"}[5m]))",
+          "legendFormat": "misses"
+        }
+      ],
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Kafka Produced/Consumed",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_messages_produced_total{service=~\"$service\"}[5m])) by (topic)",
+          "legendFormat": "produced {{topic}}"
+        },
+        {
+          "expr": "sum(rate(kafka_messages_consumed_total{service=~\"$service\"}[5m])) by (topic)",
+          "legendFormat": "consumed {{topic}}"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Kafka DLQ/Errors",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_messages_dlq_total{service=~\"$service\"}[5m])) by (topic)",
+          "legendFormat": "dlq {{topic}}"
+        },
+        {
+          "expr": "sum(rate(kafka_processing_errors_total{service=~\"$service\"}[5m])) by (topic)",
+          "legendFormat": "error {{topic}}"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Postgres Pool",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "pg_pool_total{service=~\"$service\"}",
+          "legendFormat": "total"
+        },
+        {
+          "expr": "pg_pool_idle{service=~\"$service\"}",
+          "legendFormat": "idle"
+        },
+        {
+          "expr": "pg_pool_waiting{service=~\"$service\"}",
+          "legendFormat": "waiting"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Mongo State/Pool",
+      "datasource": { "uid": "prometheus", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "mongo_connection_state{service=~\"$service\"}",
+          "legendFormat": "state"
+        },
+        {
+          "expr": "mongo_pool_size{service=~\"$service\"}",
+          "legendFormat": "pool"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 6 }
+    },
+    {
+      "type": "logs",
+      "title": "Logs",
+      "datasource": { "uid": "loki", "type": "loki" },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\"}"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 8 }
+    }
+  ]
+}
