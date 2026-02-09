@@ -29,6 +29,17 @@ describe("WalletController", () => {
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
   });
 
+  it("valida amount zero na transação", async () => {
+    const controller = makeController();
+
+    await expect(
+      controller.createTransaction(
+        { body: { user_id: "wallet-1", type: "CREDIT", amount: 0 } } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
+  });
+
   it("cria transação com sucesso", async () => {
     const createTransactionUseCase = {
       execute: jest.fn().mockResolvedValue({

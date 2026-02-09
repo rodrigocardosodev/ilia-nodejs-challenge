@@ -1,6 +1,7 @@
 jest.mock("crypto", () => ({ randomUUID: () => "event-id" }));
 
 import { TransferBetweenUsersUseCase } from "../../../src/wallet/application/use-cases/TransferBetweenUsersUseCase";
+import { AppError } from "../../../src/shared/http/AppError";
 
 describe("TransferBetweenUsersUseCase", () => {
   const makeLogger = () => ({
@@ -88,6 +89,31 @@ describe("TransferBetweenUsersUseCase", () => {
       })
     ).rejects.toBe(error);
 
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("propaga erro de saldo insuficiente", async () => {
+    const error = new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
+    const walletRepository = {
+      transferBetweenUsers: jest.fn().mockRejectedValue(error)
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new TransferBetweenUsersUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        fromWalletId: "wallet-1",
+        toWalletId: "wallet-2",
+        amount: 20,
+        idempotencyKey: "key-12345"
+      })
+    ).rejects.toBe(error);
     expect(logger.error).toHaveBeenCalled();
   });
 });

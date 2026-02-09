@@ -69,4 +69,48 @@ describe("AuthenticateUserUseCase", () => {
 
     expect(result).toBe(user);
   });
+
+  it("propaga erro quando repositório falha", async () => {
+    const error = new Error("db");
+    const userRepository = { findByEmail: jest.fn().mockRejectedValue(error) };
+    const passwordHasher = { compare: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new AuthenticateUserUseCase(
+      userRepository as any,
+      passwordHasher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({ email: "a@a.com", password: "x" })
+    ).rejects.toBe(error);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("propaga erro quando compare falha", async () => {
+    const error = new Error("compare");
+    const userRepository = {
+      findByEmail: jest.fn().mockResolvedValue({
+        id: "user-1",
+        name: "Ana",
+        email: "a@a.com",
+        password: "hash",
+        createdAt: new Date()
+      })
+    };
+    const passwordHasher = { compare: jest.fn().mockRejectedValue(error) };
+    const logger = makeLogger();
+
+    const useCase = new AuthenticateUserUseCase(
+      userRepository as any,
+      passwordHasher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({ email: "a@a.com", password: "x" })
+    ).rejects.toBe(error);
+    expect(logger.error).toHaveBeenCalled();
+  });
 });

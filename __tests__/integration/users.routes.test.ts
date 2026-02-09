@@ -126,6 +126,28 @@ describe("users routes", () => {
     expect(response.body.code).toBe("UNAUTHORIZED");
   });
 
+  it("rejeita Authorization sem Bearer", async () => {
+    const app = buildApp(
+      {
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com",
+        createdAt: new Date(),
+        created: true
+      },
+      { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" },
+      { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" }
+    );
+
+    const response = await request(app)
+      .get("/users")
+      .set("Authorization", "Token invalid");
+
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe("UNAUTHORIZED");
+  });
+
   it("retorna usuário no /users/:id com token válido", async () => {
     const app = buildApp(
       {

@@ -16,6 +16,16 @@ describe("GetBalanceUseCase", () => {
     expect(result).toBe(120);
   });
 
+  it("retorna saldo zero quando wallet não existe", async () => {
+    const walletRepository = { getBalance: jest.fn().mockResolvedValue(0) };
+    const logger = makeLogger();
+    const useCase = new GetBalanceUseCase(walletRepository as any, logger as any);
+
+    const result = await useCase.execute("wallet-1");
+
+    expect(result).toBe(0);
+  });
+
   it("propaga erro quando repositório falha", async () => {
     const error = new Error("db");
     const walletRepository = { getBalance: jest.fn().mockRejectedValue(error) };

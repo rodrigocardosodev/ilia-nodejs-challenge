@@ -66,6 +66,44 @@ describe("shared http", () => {
       );
     });
 
+    it("falha quando token expirado", () => {
+      const metrics = makeMetrics();
+      const middleware = authMiddleware({ jwtKey: "secret", metrics } as any);
+      const next = jest.fn();
+      const token = jwt.sign(
+        { sub: "user-1", exp: Math.floor(Date.now() / 1000) - 10 },
+        "secret",
+        { algorithm: "HS256" }
+      );
+      const req = {
+        headers: { authorization: `Bearer ${token}` }
+      } as any;
+
+      middleware(req, {} as any, next);
+
+      expect(metrics.recordAuthFailure).toHaveBeenCalledWith("invalid_token");
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "UNAUTHORIZED", statusCode: 401 })
+      );
+    });
+
+    it("falha quando Authorization não tem Bearer", () => {
+      const metrics = makeMetrics();
+      const middleware = authMiddleware({ jwtKey: "secret", metrics } as any);
+      const next = jest.fn();
+      const token = jwt.sign({ sub: "user-1" }, "secret", { algorithm: "HS256" });
+      const req = {
+        headers: { authorization: `Token ${token}` }
+      } as any;
+
+      middleware(req, {} as any, next);
+
+      expect(metrics.recordAuthFailure).toHaveBeenCalledWith("missing_token");
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "UNAUTHORIZED", statusCode: 401 })
+      );
+    });
+
     it("falha quando payload não tem userId", () => {
       const metrics = makeMetrics();
       const middleware = authMiddleware({ jwtKey: "secret", metrics } as any);

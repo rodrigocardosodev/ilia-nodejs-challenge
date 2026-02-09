@@ -171,4 +171,45 @@ describe("RegisterUserUseCase", () => {
     expect(result.created).toBe(true);
     expect(logger.error).toHaveBeenCalled();
   });
+
+  it("propaga erro quando hash falha", async () => {
+    const error = new Error("hash");
+    const userRepository = {
+      findByEmail: jest.fn().mockResolvedValue(null),
+      create: jest.fn()
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const passwordHasher = { hash: jest.fn().mockRejectedValue(error) };
+    const logger = makeLogger();
+
+    const useCase = new RegisterUserUseCase(
+      userRepository as any,
+      eventPublisher as any,
+      passwordHasher as any,
+      logger as any
+    );
+
+    await expect(useCase.execute(baseInput)).rejects.toBe(error);
+    expect(userRepository.create).not.toHaveBeenCalled();
+  });
+
+  it("propaga erro quando create falha", async () => {
+    const error = new Error("db");
+    const userRepository = {
+      findByEmail: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockRejectedValue(error)
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const passwordHasher = { hash: jest.fn().mockResolvedValue("hashed") };
+    const logger = makeLogger();
+
+    const useCase = new RegisterUserUseCase(
+      userRepository as any,
+      eventPublisher as any,
+      passwordHasher as any,
+      logger as any
+    );
+
+    await expect(useCase.execute(baseInput)).rejects.toBe(error);
+  });
 });

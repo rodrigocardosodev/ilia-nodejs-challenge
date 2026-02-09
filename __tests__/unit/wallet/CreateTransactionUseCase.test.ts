@@ -1,6 +1,7 @@
 jest.mock("crypto", () => ({ randomUUID: () => "event-id" }));
 
 import { CreateTransactionUseCase } from "../../../src/wallet/application/use-cases/CreateTransactionUseCase";
+import { AppError } from "../../../src/shared/http/AppError";
 
 describe("CreateTransactionUseCase", () => {
   const makeLogger = () => ({
@@ -240,5 +241,138 @@ describe("CreateTransactionUseCase", () => {
         step: "compensate"
       })
     );
+  });
+
+  it("retorna conflito quando saga está pendente", async () => {
+    const walletRepository = {
+      findSagaByIdempotencyKey: jest.fn().mockResolvedValue({
+        id: "saga-1",
+        walletId: "wallet-1",
+        idempotencyKey: "key-12345",
+        transactionId: null,
+        type: "credit",
+        amount: 50,
+        status: "pending",
+        step: "apply_transaction",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }),
+      applyTransaction: jest.fn()
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new CreateTransactionUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        walletId: "wallet-1",
+        type: "credit",
+        amount: 50,
+        idempotencyKey: "key-12345"
+      })
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "CONFLICT",
+        statusCode: 409
+      })
+    );
+  });
+
+  it("propaga erro quando createSaga falha", async () => {
+    const error = new Error("saga");
+    const walletRepository = {
+      findSagaByIdempotencyKey: jest.fn().mockResolvedValue(null),
+      createSaga: jest.fn().mockRejectedValue(error)
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new CreateTransactionUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        walletId: "wallet-1",
+        type: "credit",
+        amount: 50,
+        idempotencyKey: "key-12345"
+      })
+    ).rejects.toBe(error);
+  });
+
+  it("compensa quando updateSaga falha", async () => {
+    const error = new Error("update");
+    const walletRepository = {
+      findSagaByIdempotencyKey: jest.fn().mockResolvedValue(null),
+      createSaga: jest.fn().mockResolvedValue(undefined),
+      updateSaga: jest.fn().mockRejectedValue(error),
+      compensateTransaction: jest.fn().mockResolvedValue(undefined),
+      applyTransaction: jest.fn().mockResolvedValue({
+        transactionId: "tx-1",
+        createdAt: new Date("2024-01-01"),
+        balance: 100
+      })
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new CreateTransactionUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        walletId: "wallet-1",
+        type: "credit",
+        amount: 50,
+        idempotencyKey: "key-12345"
+      })
+    ).rejects.toBe(error);
+
+    expect(walletRepository.compensateTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        walletId: "wallet-1",
+        type: "debit",
+        amount: 50
+      })
+    );
+  });
+
+  it("propaga erro de saldo insuficiente", async () => {
+    const error = new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
+    const walletRepository = {
+      findSagaByIdempotencyKey: jest.fn().mockResolvedValue(null),
+      createSaga: jest.fn().mockResolvedValue(undefined),
+      updateSaga: jest.fn().mockResolvedValue(undefined),
+      compensateTransaction: jest.fn().mockResolvedValue(undefined),
+      applyTransaction: jest.fn().mockRejectedValue(error)
+    };
+    const eventPublisher = { publish: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new CreateTransactionUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        walletId: "wallet-1",
+        type: "debit",
+        amount: 5000,
+        idempotencyKey: "key-12345"
+      })
+    ).rejects.toBe(error);
   });
 });

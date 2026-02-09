@@ -40,6 +40,31 @@ describe("UsersController", () => {
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
   });
 
+  it("valida tamanho do first_name no registro", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.register(
+        {
+          body: {
+            first_name: "A",
+            last_name: "Silva",
+            email: "a@a.com",
+            password: "secret123"
+          }
+        } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
+  });
+
   it("retorna 200 quando usuário já existe", async () => {
     const controller = makeController({
       id: "u1",

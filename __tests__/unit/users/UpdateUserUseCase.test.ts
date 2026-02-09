@@ -80,4 +80,26 @@ describe("UpdateUserUseCase", () => {
       })
     ).rejects.toBe(error);
   });
+
+  it("propaga erro de conflito do repositório", async () => {
+    const error = new AppError("CONFLICT", 409, "Email already in use");
+    const userRepository = { updateById: jest.fn().mockRejectedValue(error) };
+    const passwordHasher = { hash: jest.fn().mockResolvedValue("hash") };
+    const logger = makeLogger();
+    const useCase = new UpdateUserUseCase(
+      userRepository as any,
+      passwordHasher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com",
+        password: "secret"
+      })
+    ).rejects.toBe(error);
+  });
 });
