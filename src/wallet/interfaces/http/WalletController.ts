@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { z } from "zod";
-import { randomUUID } from "crypto";
 import { CreateTransactionUseCase } from "../../application/use-cases/CreateTransactionUseCase";
 import { GetBalanceUseCase } from "../../application/use-cases/GetBalanceUseCase";
 import { ListTransactionsUseCase } from "../../application/use-cases/ListTransactionsUseCase";
@@ -44,7 +43,10 @@ export class WalletController {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }
 
-    const idempotencyKey = req.get("Idempotency-Key") ?? randomUUID();
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey || idempotencyKey.trim().length === 0) {
+      throw new AppError("IDEMPOTENCY_KEY_REQUIRED", 422, "Idempotency-Key header is required");
+    }
     const result = await this.createTransactionUseCase.execute({
       walletId,
       type: parsed.data.type === "CREDIT" ? "credit" : "debit",
@@ -86,7 +88,10 @@ export class WalletController {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }
 
-    const idempotencyKey = req.get("Idempotency-Key") ?? randomUUID();
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey || idempotencyKey.trim().length === 0) {
+      throw new AppError("IDEMPOTENCY_KEY_REQUIRED", 422, "Idempotency-Key header is required");
+    }
 
     const result = await this.createTransactionUseCase.execute({
       walletId,

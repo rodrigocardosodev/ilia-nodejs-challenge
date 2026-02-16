@@ -1,5 +1,3 @@
-jest.mock("crypto", () => ({ randomUUID: () => "generated-id" }));
-
 import { WalletController } from "../../../src/wallet/interfaces/http/WalletController";
 import { AppError } from "../../../src/shared/http/AppError";
 
@@ -91,7 +89,7 @@ describe("WalletController", () => {
     expect(response.status).toHaveBeenCalledWith(201);
   });
 
-  it("cria transação de débito com idempotency gerado automaticamente", async () => {
+  it("retorna 422 quando createTransaction não recebe Idempotency-Key", async () => {
     const createTransactionUseCase = {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-debit",
@@ -104,30 +102,21 @@ describe("WalletController", () => {
       { execute: jest.fn() } as any,
       { execute: jest.fn() } as any
     );
-    const response = res();
 
-    await controller.createTransaction(
-      {
-        userId: "wallet-1",
-        body: { type: "DEBIT", amount: "10.0000" },
-        get: () => undefined
-      } as any,
-      response as any
+    await expect(
+      controller.createTransaction(
+        {
+          userId: "wallet-1",
+          body: { type: "DEBIT", amount: "10.0000" },
+          get: () => undefined
+        } as any,
+        res() as any
+      )
+    ).rejects.toEqual(
+      new AppError("IDEMPOTENCY_KEY_REQUIRED", 422, "Idempotency-Key header is required")
     );
 
-    expect(createTransactionUseCase.execute).toHaveBeenCalledWith({
-      walletId: "wallet-1",
-      type: "debit",
-      amount: "10.0000",
-      idempotencyKey: "generated-id"
-    });
-    expect(response.status).toHaveBeenCalledWith(201);
-    expect(response.json).toHaveBeenCalledWith({
-      id: "tx-debit",
-      user_id: "wallet-1",
-      amount: "10.0000",
-      type: "DEBIT"
-    });
+    expect(createTransactionUseCase.execute).not.toHaveBeenCalled();
   });
 
   it("faz depósito", async () => {
@@ -159,7 +148,7 @@ describe("WalletController", () => {
     });
   });
 
-  it("faz depósito com idempotency gerado automaticamente", async () => {
+  it("retorna 422 quando deposit não recebe Idempotency-Key", async () => {
     const createTransactionUseCase = {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-3",
@@ -172,20 +161,17 @@ describe("WalletController", () => {
       { execute: jest.fn() } as any,
       { execute: jest.fn() } as any
     );
-    const response = res();
 
-    await controller.deposit(
-      { userId: "wallet-1", body: { amount: "20.0000" }, get: () => undefined } as any,
-      response as any
+    await expect(
+      controller.deposit(
+        { userId: "wallet-1", body: { amount: "20.0000" }, get: () => undefined } as any,
+        res() as any
+      )
+    ).rejects.toEqual(
+      new AppError("IDEMPOTENCY_KEY_REQUIRED", 422, "Idempotency-Key header is required")
     );
 
-    expect(createTransactionUseCase.execute).toHaveBeenCalledWith({
-      walletId: "wallet-1",
-      type: "credit",
-      amount: "20.0000",
-      idempotencyKey: "generated-id"
-    });
-    expect(response.status).toHaveBeenCalledWith(201);
+    expect(createTransactionUseCase.execute).not.toHaveBeenCalled();
   });
 
   it("bloqueia depósito sem usuário", async () => {

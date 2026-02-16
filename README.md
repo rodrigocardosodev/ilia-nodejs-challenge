@@ -92,16 +92,23 @@ Users:
 
 ## Endpoints
 Todos os endpoints exigem JWT no header `Authorization: Bearer <token>`.
+Endpoints de escrita exigem também o header `Idempotency-Key` não vazio. Quando ausente/inválido, a API retorna `422` com código `IDEMPOTENCY_KEY_REQUIRED`.
 
 Wallet:
-- `POST /wallet/transactions`
-  - body: `{ "type": "credit" | "debit", "amountCents": number, "idempotencyKey": string }`
+- `POST /transactions`
+  - header obrigatório: `Idempotency-Key: <string>`
+  - body: `{ "type": "CREDIT" | "DEBIT", "amount": string }`
 - `GET /wallet/balance`
   - response: `{ "balanceCents": number }`
 
 Users:
 - `POST /users`
+  - header obrigatório: `Idempotency-Key: <string>`
   - body: `{ "name": string, "email": string }`
+- `PATCH /users/:id`
+  - header obrigatório: `Idempotency-Key: <string>`
+- `DELETE /users/:id`
+  - header obrigatório: `Idempotency-Key: <string>`
 - `GET /users/me`
 
 Health checks:

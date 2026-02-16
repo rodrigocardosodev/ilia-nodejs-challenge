@@ -2,6 +2,7 @@ export type ErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "INVALID_INPUT"
+  | "IDEMPOTENCY_KEY_REQUIRED"
   | "NOT_FOUND"
   | "CONFLICT"
   | "INSUFFICIENT_FUNDS"

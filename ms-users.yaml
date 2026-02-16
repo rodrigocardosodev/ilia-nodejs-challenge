@@ -16,6 +16,12 @@ paths:
   # Users
   /users:
     post:
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
@@ -51,6 +57,12 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
   /users/:id:
     patch:
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
@@ -89,6 +101,12 @@ paths:
         - Users
       security: 
         - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
       responses:
         200:
           description: OK

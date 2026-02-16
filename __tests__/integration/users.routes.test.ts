@@ -51,7 +51,10 @@ describe("users routes", () => {
       { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" }
     );
 
-    const response = await request(app).post("/users").send({ email: "a@a.com" });
+    const response = await request(app)
+      .post("/users")
+      .set("Idempotency-Key", "idem-register-invalid")
+      .send({ email: "a@a.com" });
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe("INVALID_INPUT");
@@ -73,6 +76,7 @@ describe("users routes", () => {
 
     const response = await request(app)
       .post("/users")
+      .set("Idempotency-Key", "idem-register-ok")
       .send({
         first_name: "Ana",
         last_name: "Silva",
@@ -82,6 +86,31 @@ describe("users routes", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.id).toBe("u1");
+  });
+
+  it("retorna 422 quando Idempotency-Key está ausente no registro", async () => {
+    const app = buildApp(
+      {
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com",
+        createdAt: new Date(),
+        created: true
+      },
+      { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" },
+      { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" }
+    );
+
+    const response = await request(app).post("/users").send({
+      first_name: "Ana",
+      last_name: "Silva",
+      email: "a@a.com",
+      password: "secret123"
+    });
+
+    expect(response.status).toBe(422);
+    expect(response.body.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
   });
 
   it("retorna token no login", async () => {

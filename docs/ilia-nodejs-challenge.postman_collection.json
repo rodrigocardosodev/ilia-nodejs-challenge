@@ -50,6 +50,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "idem-register-user"
               }
             ],
             "url": "{{usersBaseUrl}}/users",
@@ -112,6 +116,10 @@
                 "value": "Bearer {{token}}"
               },
               {
+                "key": "Idempotency-Key",
+                "value": "idem-update-user"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -131,6 +139,10 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "idem-delete-user"
               }
             ],
             "url": "{{usersBaseUrl}}/users/user-id"
@@ -183,6 +195,10 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "idem-create-transaction"
               },
               {
                 "key": "Content-Type",

@@ -51,6 +51,7 @@ describe("wallet routes", () => {
     const response = await request(app)
       .post("/transactions")
       .set("Authorization", `Bearer ${token()}`)
+      .set("Idempotency-Key", "idem-invalid-body")
       .send({ amount: "10.0000" });
 
     expect(response.status).toBe(400);
@@ -63,6 +64,7 @@ describe("wallet routes", () => {
     const response = await request(app)
       .post("/transactions")
       .set("Authorization", `Bearer ${token()}`)
+      .set("Idempotency-Key", "idem-credit")
       .send({ user_id: "wallet-1", type: "CREDIT", amount: "10.0000" });
 
     expect(response.status).toBe(201);
@@ -75,10 +77,23 @@ describe("wallet routes", () => {
     const response = await request(app)
       .post("/transactions")
       .set("Authorization", `Bearer ${token()}`)
+      .set("Idempotency-Key", "idem-debit")
       .send({ user_id: "wallet-2", type: "DEBIT", amount: "10.0000" });
 
     expect(response.status).toBe(201);
     expect(response.body.type).toBe("DEBIT");
+  });
+
+  it("retorna 422 quando Idempotency-Key está ausente na transação", async () => {
+    const app = buildApp();
+
+    const response = await request(app)
+      .post("/transactions")
+      .set("Authorization", `Bearer ${token()}`)
+      .send({ type: "CREDIT", amount: "10.0000" });
+
+    expect(response.status).toBe(422);
+    expect(response.body.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
   });
 
   it("retorna saldo", async () => {

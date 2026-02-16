@@ -3,6 +3,7 @@ import { AppError } from "../../../src/shared/http/AppError";
 import { asyncHandler } from "../../../src/shared/http/asyncHandler";
 import { authMiddleware } from "../../../src/shared/http/authMiddleware";
 import { createErrorMiddleware } from "../../../src/shared/http/errorMiddleware";
+import { requireIdempotencyKey } from "../../../src/shared/http/idempotencyKeyMiddleware";
 import { runWithTrace } from "../../../src/shared/observability/trace";
 
 describe("shared http", () => {
@@ -196,6 +197,51 @@ describe("shared http", () => {
           code: "INTERNAL"
         })
       );
+    });
+  });
+
+  describe("requireIdempotencyKey", () => {
+    it("retorna erro quando header está ausente", () => {
+      const next = jest.fn();
+      const req = {
+        get: jest.fn().mockReturnValue(undefined)
+      } as any;
+
+      requireIdempotencyKey(req, {} as any, next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: "IDEMPOTENCY_KEY_REQUIRED",
+          statusCode: 422
+        })
+      );
+    });
+
+    it("retorna erro quando header está vazio", () => {
+      const next = jest.fn();
+      const req = {
+        get: jest.fn().mockReturnValue("   ")
+      } as any;
+
+      requireIdempotencyKey(req, {} as any, next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: "IDEMPOTENCY_KEY_REQUIRED",
+          statusCode: 422
+        })
+      );
+    });
+
+    it("permite seguir quando header é válido", () => {
+      const next = jest.fn();
+      const req = {
+        get: jest.fn().mockReturnValue("idem-123")
+      } as any;
+
+      requireIdempotencyKey(req, {} as any, next);
+
+      expect(next).toHaveBeenCalledWith();
     });
   });
 });
