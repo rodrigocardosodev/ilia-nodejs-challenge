@@ -65,7 +65,7 @@ describe("wallet routes", () => {
       .set("Authorization", `Bearer ${token()}`)
       .send({ user_id: "wallet-1", type: "CREDIT", amount: 10 });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     expect(response.body.type).toBe("CREDIT");
   });
 
@@ -77,7 +77,7 @@ describe("wallet routes", () => {
       .set("Authorization", `Bearer ${token()}`)
       .send({ user_id: "wallet-2", type: "DEBIT", amount: 10 });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     expect(response.body.type).toBe("DEBIT");
   });
 

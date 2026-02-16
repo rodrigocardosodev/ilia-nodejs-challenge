@@ -3,15 +3,18 @@ import jwt from "jsonwebtoken";
 import { EventPublisher, DomainEvent } from "../../application/ports/EventPublisher";
 import { Metrics } from "../../../shared/observability/metrics";
 import { createTraceId, getTraceId } from "../../../shared/observability/trace";
+import { SchemaRegistryEventCodec } from "../../../shared/messaging/SchemaRegistryEventCodec";
 
 export type KafkaPublisherConfig = {
   brokers: string[];
   clientId: string;
   internalJwt: string;
+  schemaRegistryUrl: string;
 };
 
 export class KafkaEventPublisher implements EventPublisher {
   private readonly producer: Producer;
+  private readonly schemaCodec: SchemaRegistryEventCodec;
 
   constructor(
     private readonly config: KafkaPublisherConfig,
@@ -22,6 +25,7 @@ export class KafkaEventPublisher implements EventPublisher {
       brokers: config.brokers
     });
     this.producer = kafka.producer();
+    this.schemaCodec = new SchemaRegistryEventCodec({ host: config.schemaRegistryUrl });
   }
 
   async connect(): Promise<void> {
@@ -29,17 +33,18 @@ export class KafkaEventPublisher implements EventPublisher {
   }
 
   async publish(event: DomainEvent): Promise<void> {
-    const topic = this.resolveTopic(event.name);
+    const topic = this.schemaCodec.resolveTopic(event.name);
     const token = jwt.sign({ iss: this.config.clientId }, this.config.internalJwt, {
       expiresIn: "5m"
     });
     const traceId = getTraceId() ?? createTraceId();
     try {
+      const value = await this.schemaCodec.encode(event);
       await this.producer.send({
         topic,
         messages: [
           {
-            value: JSON.stringify(event),
+            value,
             headers: {
               "x-internal-jwt": token,
               "x-trace-id": traceId
@@ -56,12 +61,5 @@ export class KafkaEventPublisher implements EventPublisher {
 
   async disconnect(): Promise<void> {
     await this.producer.disconnect();
-  }
-
-  private resolveTopic(name: string): string {
-    if (name === "users.created") {
-      return "users.created";
-    }
-    return "users.events";
   }
 }

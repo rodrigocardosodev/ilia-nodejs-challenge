@@ -7,13 +7,13 @@ import { CachedUserRepository } from "./infrastructure/cache/CachedUserRepositor
 import { KafkaEventPublisher } from "./infrastructure/messaging/KafkaEventPublisher";
 import { UsersKafkaConsumer } from "./infrastructure/messaging/UsersKafkaConsumer";
 import { RegisterUserUseCase } from "./application/use-cases/RegisterUserUseCase";
-import { AuthenticateUserUseCase } from "./application/use-cases/AuthenticateUserUseCase"; // New
+import { AuthenticateUserUseCase } from "./application/use-cases/AuthenticateUserUseCase";
 import { GetUserUseCase } from "./application/use-cases/GetUserUseCase";
 import { ListUsersUseCase } from "./application/use-cases/ListUsersUseCase";
 import { UpdateUserUseCase } from "./application/use-cases/UpdateUserUseCase";
 import { DeleteUserUseCase } from "./application/use-cases/DeleteUserUseCase";
 import { UsersController } from "./interfaces/http/UsersController";
-import { BcryptPasswordHasher } from "./infrastructure/security/BcryptPasswordHasher"; // New
+import { BcryptPasswordHasher } from "./infrastructure/security/BcryptPasswordHasher";
 import { buildUsersRoutes } from "./interfaces/http/routes";
 import { RedisWalletEventRepository } from "./infrastructure/cache/RedisWalletEventRepository";
 import { RecordWalletEventUseCase } from "./application/use-cases/RecordWalletEventUseCase";
@@ -39,11 +39,13 @@ const logger = createLogger("users");
 const metrics = createMetrics("users");
 
 const kafkaBrokers = (process.env.KAFKA_BROKERS ?? "localhost:9092").split(",");
+const schemaRegistryUrl = process.env.KAFKA_SCHEMA_REGISTRY_URL ?? "http://localhost:8081";
 const kafkaPublisher = new KafkaEventPublisher(
   {
     clientId: "users-service",
     brokers: kafkaBrokers,
-    internalJwt: internalJwtKey
+    internalJwt: internalJwtKey,
+    schemaRegistryUrl
   },
   metrics
 );
@@ -55,7 +57,7 @@ const userRepository = new CachedUserRepository(
   logger
 );
 
-const passwordHasher = new BcryptPasswordHasher(); // New
+const passwordHasher = new BcryptPasswordHasher();
 
 const registerUserUseCase = new RegisterUserUseCase(
   userRepository,
@@ -63,7 +65,7 @@ const registerUserUseCase = new RegisterUserUseCase(
   passwordHasher,
   logger
 );
-const authenticateUserUseCase = new AuthenticateUserUseCase(userRepository, passwordHasher, logger); // New
+const authenticateUserUseCase = new AuthenticateUserUseCase(userRepository, passwordHasher, logger);
 const getUserUseCase = new GetUserUseCase(userRepository, logger);
 const listUsersUseCase = new ListUsersUseCase(userRepository, logger);
 const updateUserUseCase = new UpdateUserUseCase(userRepository, passwordHasher, logger);
@@ -77,7 +79,8 @@ const usersConsumer = new UsersKafkaConsumer(
     clientId: "users-consumer",
     brokers: kafkaBrokers,
     groupId: "users-wallet",
-    internalJwtKey
+    internalJwtKey,
+    schemaRegistryUrl
   },
   recordWalletEventUseCase,
   metrics,
@@ -108,11 +111,11 @@ app.use(
     new UsersController(
       registerUserUseCase,
       getUserUseCase,
-      authenticateUserUseCase, // New
+      authenticateUserUseCase,
       listUsersUseCase,
       updateUserUseCase,
       deleteUserUseCase,
-      jwtKey // New
+      jwtKey
     ),
     {
       jwtKey,

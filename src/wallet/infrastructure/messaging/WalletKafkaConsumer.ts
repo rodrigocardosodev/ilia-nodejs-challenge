@@ -4,17 +4,23 @@ import { EnsureWalletUseCase } from "../../application/use-cases/EnsureWalletUse
 import { Metrics } from "../../../shared/observability/metrics";
 import { Logger } from "../../../shared/observability/logger";
 import { createTraceId, runWithTrace } from "../../../shared/observability/trace";
+import {
+  SchemaRegistryEventCodec,
+  SchemaValidationError
+} from "../../../shared/messaging/SchemaRegistryEventCodec";
 
 export type WalletKafkaConsumerConfig = {
   brokers: string[];
   clientId: string;
   groupId: string;
   internalJwtKey: string;
+  schemaRegistryUrl: string;
 };
 
 export class WalletKafkaConsumer {
   private readonly consumer: Consumer;
   private readonly producer: Producer;
+  private readonly schemaCodec: SchemaRegistryEventCodec;
   private readonly maxRetries = 3;
 
   constructor(
@@ -29,10 +35,11 @@ export class WalletKafkaConsumer {
     });
     this.consumer = kafka.consumer({ groupId: config.groupId });
     this.producer = kafka.producer();
+    this.schemaCodec = new SchemaRegistryEventCodec({ host: config.schemaRegistryUrl });
   }
 
   private async sendToDlq(
-    value: string,
+    value: Buffer,
     baseHeaders: Record<string, any>,
     attempt: number,
     errorMessage: string
@@ -65,7 +72,7 @@ export class WalletKafkaConsumer {
     await this.consumer.subscribe({ topic: "users.created", fromBeginning: false });
     await this.consumer.run({
       eachMessage: async ({ message }) => {
-        const value = message.value ? message.value.toString() : "";
+        const value = message.value ?? Buffer.from("");
         const baseHeaders = message.headers ?? {};
         const topic = "users.created";
         this.metrics.recordKafkaConsumed(topic);
@@ -81,13 +88,32 @@ export class WalletKafkaConsumer {
 
         const traceHeader = baseHeaders["x-trace-id"];
         const traceId = traceHeader ? traceHeader.toString() : createTraceId();
+        const expectedEventNames = this.schemaCodec.getExpectedEventNamesByTopic(topic);
+
+        let userId: string | null = null;
+
+        try {
+          const decodedEvent = await this.schemaCodec.decode(value, expectedEventNames);
+          const payload = decodedEvent.payload;
+          const rawUserId = payload["userId"];
+          if (typeof rawUserId !== "string" || rawUserId.length === 0) {
+            await this.sendToDlq(value, baseHeaders, 1, "schema_validation_failed");
+            return;
+          }
+          userId = rawUserId;
+        } catch (error) {
+          if (error instanceof SchemaValidationError) {
+            await this.sendToDlq(value, baseHeaders, 1, "schema_validation_failed");
+            return;
+          }
+          await this.sendToDlq(value, baseHeaders, 1, "decode_failed");
+          return;
+        }
 
         for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
           try {
             await runWithTrace(traceId, async () => {
-              const payload = value ? JSON.parse(value) : null;
-              const userId = payload?.payload?.userId;
-              if (typeof userId === "string" && userId.length > 0) {
+              if (userId) {
                 await this.ensureWalletUseCase.execute(userId);
               }
             });

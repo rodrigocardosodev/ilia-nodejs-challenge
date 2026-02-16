@@ -65,7 +65,7 @@ describe("UsersController", () => {
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
   });
 
-  it("retorna 200 quando usuário já existe", async () => {
+  it("retorna 201 quando usuário já existe", async () => {
     const controller = makeController({
       id: "u1",
       firstName: "Ana",
@@ -88,7 +88,7 @@ describe("UsersController", () => {
       response as any
     );
 
-    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.status).toHaveBeenCalledWith(201);
   });
 
   it("valida body do login", async () => {
@@ -156,7 +156,7 @@ describe("UsersController", () => {
     });
     const response = res();
 
-    await controller.getById({ params: { id: "u1" } } as any, response as any);
+    await controller.getById({ params: { id: "u1" }, userId: "u1" } as any, response as any);
 
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.json).toHaveBeenCalledWith({
@@ -165,6 +165,51 @@ describe("UsersController", () => {
       last_name: "Silva",
       email: "a@a.com"
     });
+  });
+
+  it("retorna unauthorized no getById sem usuário autenticado", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.getById({ params: { id: "u1" }, userId: "" } as any, res() as any)
+    ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("retorna unauthorized no getById quando userId não existe no request", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(controller.getById({ params: { id: "u1" } } as any, res() as any)).rejects.toEqual(
+      new AppError("UNAUTHORIZED", 401, "Unauthorized")
+    );
+  });
+
+  it("retorna forbidden no getById com usuário diferente", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.getById({ params: { id: "u1" }, userId: "u2" } as any, res() as any)
+    ).rejects.toEqual(new AppError("FORBIDDEN", 403, "Forbidden"));
   });
 
   it("valida body no update", async () => {
@@ -179,7 +224,7 @@ describe("UsersController", () => {
 
     await expect(
       controller.update(
-        { params: { id: "u1" }, body: { email: "a@a.com" } } as any,
+        { params: { id: "u1" }, userId: "u1", body: { email: "a@a.com" } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
@@ -217,6 +262,7 @@ describe("UsersController", () => {
     await controller.update(
       {
         params: { id: "u1" },
+        userId: "u1",
         body: {
           first_name: "Ana",
           last_name: "Silva",
@@ -230,6 +276,86 @@ describe("UsersController", () => {
     expect(response.status).toHaveBeenCalledWith(200);
   });
 
+  it("retorna unauthorized no update sem usuário autenticado", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.update(
+        {
+          params: { id: "u1" },
+          userId: "",
+          body: {
+            first_name: "Ana",
+            last_name: "Silva",
+            email: "a@a.com",
+            password: "secret123"
+          }
+        } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("retorna unauthorized no update quando userId não existe no request", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.update(
+        {
+          params: { id: "u1" },
+          body: {
+            first_name: "Ana",
+            last_name: "Silva",
+            email: "a@a.com",
+            password: "secret123"
+          }
+        } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("retorna forbidden no update com usuário diferente", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.update(
+        {
+          params: { id: "u1" },
+          userId: "u2",
+          body: {
+            first_name: "Ana",
+            last_name: "Silva",
+            email: "a@a.com",
+            password: "secret123"
+          }
+        } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("FORBIDDEN", 403, "Forbidden"));
+  });
+
   it("remove usuário", async () => {
     const controller = makeController({
       id: "u1",
@@ -241,9 +367,54 @@ describe("UsersController", () => {
     });
     const response = { status: jest.fn().mockReturnThis(), send: jest.fn() };
 
-    await controller.remove({ params: { id: "u1" } } as any, response as any);
+    await controller.remove({ params: { id: "u1" }, userId: "u1" } as any, response as any);
 
     expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it("retorna unauthorized no remove sem usuário autenticado", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.remove({ params: { id: "u1" }, userId: "" } as any, res() as any)
+    ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("retorna unauthorized no remove quando userId não existe no request", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(controller.remove({ params: { id: "u1" } } as any, res() as any)).rejects.toEqual(
+      new AppError("UNAUTHORIZED", 401, "Unauthorized")
+    );
+  });
+
+  it("retorna forbidden no remove com usuário diferente", async () => {
+    const controller = makeController({
+      id: "u1",
+      firstName: "Ana",
+      lastName: "Silva",
+      email: "a@a.com",
+      createdAt: new Date(),
+      created: true
+    });
+
+    await expect(
+      controller.remove({ params: { id: "u1" }, userId: "u2" } as any, res() as any)
+    ).rejects.toEqual(new AppError("FORBIDDEN", 403, "Forbidden"));
   });
 
   it("valida id no remove", async () => {
@@ -279,7 +450,7 @@ describe("UsersController", () => {
     );
 
     await expect(
-      controller.getById({ params: { id: "u1" } } as any, res() as any)
+      controller.getById({ params: { id: "u1" }, userId: "u1" } as any, res() as any)
     ).rejects.toEqual(new AppError("NOT_FOUND", 404, "User not found"));
   });
 });

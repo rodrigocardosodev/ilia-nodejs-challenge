@@ -105,6 +105,20 @@ describe("RegisterUserUseCase", () => {
     expect(passwordHasher.hash).toHaveBeenCalledWith(baseInput.password);
     expect(userRepository.create).toHaveBeenCalled();
     expect(eventPublisher.publish).toHaveBeenCalledTimes(1);
+    expect(eventPublisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "users.created",
+        payload: expect.objectContaining({
+          eventId: "uuid-1",
+          userId: "user-1",
+          name: "Ana Silva",
+          firstName: "Ana",
+          lastName: "Silva",
+          email: "ana@example.com",
+          occurredAt: expect.any(String)
+        })
+      })
+    );
   });
 
   it("gera id quando não informado", async () => {

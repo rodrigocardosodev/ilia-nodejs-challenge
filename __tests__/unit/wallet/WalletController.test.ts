@@ -1,3 +1,5 @@
+jest.mock("crypto", () => ({ randomUUID: () => "generated-id" }));
+
 import { WalletController } from "../../../src/wallet/interfaces/http/WalletController";
 import { AppError } from "../../../src/shared/http/AppError";
 
@@ -23,10 +25,29 @@ describe("WalletController", () => {
 
     await expect(
       controller.createTransaction(
-        { body: { amount: 1 } } as any,
+        { userId: "wallet-1", body: { amount: 1 } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
+  });
+
+  it("bloqueia criação de transação sem usuário autenticado", async () => {
+    const controller = makeController();
+
+    await expect(
+      controller.createTransaction(
+        { userId: "", body: { type: "CREDIT", amount: 10 } } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("bloqueia criação de transação sem userId no request", async () => {
+    const controller = makeController();
+
+    await expect(
+      controller.createTransaction({ body: { type: "CREDIT", amount: 10 } } as any, res() as any)
+    ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
   });
 
   it("valida amount zero na transação", async () => {
@@ -34,7 +55,7 @@ describe("WalletController", () => {
 
     await expect(
       controller.createTransaction(
-        { body: { user_id: "wallet-1", type: "CREDIT", amount: 0 } } as any,
+        { userId: "wallet-1", body: { user_id: "wallet-1", type: "CREDIT", amount: 0 } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
@@ -57,13 +78,53 @@ describe("WalletController", () => {
 
     await controller.createTransaction(
       {
+        userId: "wallet-1",
         body: { user_id: "wallet-1", type: "CREDIT", amount: 10 },
         get: () => "idem-1"
       } as any,
       response as any
     );
 
-    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.status).toHaveBeenCalledWith(201);
+  });
+
+  it("cria transação de débito com idempotency gerado automaticamente", async () => {
+    const createTransactionUseCase = {
+      execute: jest.fn().mockResolvedValue({
+        transactionId: "tx-debit",
+        createdAt: new Date(),
+        balance: 90
+      })
+    };
+    const controller = new WalletController(
+      createTransactionUseCase as any,
+      { execute: jest.fn() } as any,
+      { execute: jest.fn() } as any
+    );
+    const response = res();
+
+    await controller.createTransaction(
+      {
+        userId: "wallet-1",
+        body: { type: "DEBIT", amount: 10 },
+        get: () => undefined
+      } as any,
+      response as any
+    );
+
+    expect(createTransactionUseCase.execute).toHaveBeenCalledWith({
+      walletId: "wallet-1",
+      type: "debit",
+      amount: 10,
+      idempotencyKey: "generated-id"
+    });
+    expect(response.status).toHaveBeenCalledWith(201);
+    expect(response.json).toHaveBeenCalledWith({
+      id: "tx-debit",
+      user_id: "wallet-1",
+      amount: 10,
+      type: "DEBIT"
+    });
   });
 
   it("faz depósito", async () => {
@@ -86,7 +147,7 @@ describe("WalletController", () => {
       response as any
     );
 
-    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.status).toHaveBeenCalledWith(201);
     expect(response.json).toHaveBeenCalledWith({
       id: "tx-2",
       user_id: "wallet-1",
@@ -95,12 +156,49 @@ describe("WalletController", () => {
     });
   });
 
+  it("faz depósito com idempotency gerado automaticamente", async () => {
+    const createTransactionUseCase = {
+      execute: jest.fn().mockResolvedValue({
+        transactionId: "tx-3",
+        createdAt: new Date(),
+        balance: 120
+      })
+    };
+    const controller = new WalletController(
+      createTransactionUseCase as any,
+      { execute: jest.fn() } as any,
+      { execute: jest.fn() } as any
+    );
+    const response = res();
+
+    await controller.deposit(
+      { userId: "wallet-1", body: { amount: 20 }, get: () => undefined } as any,
+      response as any
+    );
+
+    expect(createTransactionUseCase.execute).toHaveBeenCalledWith({
+      walletId: "wallet-1",
+      type: "credit",
+      amount: 20,
+      idempotencyKey: "generated-id"
+    });
+    expect(response.status).toHaveBeenCalledWith(201);
+  });
+
   it("bloqueia depósito sem usuário", async () => {
     const controller = makeController();
 
     await expect(
       controller.deposit({ userId: "" } as any, res() as any)
     ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("bloqueia depósito sem userId no request", async () => {
+    const controller = makeController();
+
+    await expect(controller.deposit({ body: { amount: 10 } } as any, res() as any)).rejects.toEqual(
+      new AppError("UNAUTHORIZED", 401, "Unauthorized")
+    );
   });
 
   it("valida body do depósito", async () => {
@@ -142,6 +240,14 @@ describe("WalletController", () => {
     await expect(
       controller.listTransactions({ userId: "" } as any, res() as any)
     ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+  });
+
+  it("bloqueia listagem sem userId no request", async () => {
+    const controller = makeController();
+
+    await expect(controller.listTransactions({ query: {} } as any, res() as any)).rejects.toEqual(
+      new AppError("UNAUTHORIZED", 401, "Unauthorized")
+    );
   });
 
   it("valida filtro inválido na listagem", async () => {
@@ -186,6 +292,41 @@ describe("WalletController", () => {
         user_id: "wallet-1",
         type: "CREDIT",
         amount: 10
+      }
+    ]);
+  });
+
+  it("lista transações filtrando por DEBIT e mapeando tipo de saída", async () => {
+    const listTransactionsUseCase = {
+      execute: jest.fn().mockResolvedValue([
+        {
+          id: "tx-2",
+          walletId: "wallet-1",
+          type: "debit",
+          amount: 25,
+          createdAt: new Date()
+        }
+      ])
+    };
+    const controller = new WalletController(
+      { execute: jest.fn() } as any,
+      { execute: jest.fn() } as any,
+      listTransactionsUseCase as any
+    );
+    const response = res();
+
+    await controller.listTransactions(
+      { userId: "wallet-1", query: { type: "DEBIT" } } as any,
+      response as any
+    );
+
+    expect(listTransactionsUseCase.execute).toHaveBeenCalledWith("wallet-1", "debit");
+    expect(response.json).toHaveBeenCalledWith([
+      {
+        id: "tx-2",
+        user_id: "wallet-1",
+        type: "DEBIT",
+        amount: 25
       }
     ]);
   });

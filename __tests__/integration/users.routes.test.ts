@@ -80,7 +80,7 @@ describe("users routes", () => {
         password: "secret123"
       });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     expect(response.body.id).toBe("u1");
   });
 

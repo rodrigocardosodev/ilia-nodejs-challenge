@@ -43,6 +43,7 @@ describe("CreateTransactionUseCase", () => {
         name: "wallet.transaction.created",
         payload: expect.objectContaining({
           eventId: "event-id",
+          occurredAt: expect.any(String),
           walletId: "wallet-1",
           transactionId: "tx-1",
           type: "credit",
@@ -199,6 +200,47 @@ describe("CreateTransactionUseCase", () => {
         type: "debit",
         amount: 50,
         idempotencyKey: "key-12345:compensate"
+      })
+    );
+  });
+
+  it("faz compensação invertida quando transação original é débito", async () => {
+    const error = new Error("publish");
+    const walletRepository = {
+      findSagaByIdempotencyKey: jest.fn().mockResolvedValue(null),
+      createSaga: jest.fn().mockResolvedValue(undefined),
+      updateSaga: jest.fn().mockResolvedValue(undefined),
+      compensateTransaction: jest.fn().mockResolvedValue(undefined),
+      applyTransaction: jest.fn().mockResolvedValue({
+        transactionId: "tx-2",
+        createdAt: new Date("2024-01-01"),
+        balance: 50
+      })
+    };
+    const eventPublisher = { publish: jest.fn().mockRejectedValue(error) };
+    const logger = makeLogger();
+
+    const useCase = new CreateTransactionUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
+    );
+
+    await expect(
+      useCase.execute({
+        walletId: "wallet-1",
+        type: "debit",
+        amount: 50,
+        idempotencyKey: "key-54321"
+      })
+    ).rejects.toBe(error);
+
+    expect(walletRepository.compensateTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        walletId: "wallet-1",
+        type: "credit",
+        amount: 50,
+        idempotencyKey: "key-54321:compensate"
       })
     );
   });

@@ -18,7 +18,7 @@ describe("TransferBetweenUsersUseCase", () => {
         toBalance: 120
       })
     };
-    const eventPublisher = { publish: jest.fn() };
+    const eventPublisher = { publishMany: jest.fn().mockResolvedValue(undefined) };
     const logger = makeLogger();
 
     const useCase = new TransferBetweenUsersUseCase(
@@ -35,9 +35,8 @@ describe("TransferBetweenUsersUseCase", () => {
     });
 
     expect(result.debitTransactionId).toBe("tx-debit");
-    expect(eventPublisher.publish).toHaveBeenCalledTimes(2);
-    expect(eventPublisher.publish).toHaveBeenNthCalledWith(
-      1,
+    expect(eventPublisher.publishMany).toHaveBeenCalledTimes(1);
+    expect(eventPublisher.publishMany).toHaveBeenCalledWith([
       expect.objectContaining({
         name: "wallet.transaction.created",
         payload: expect.objectContaining({
@@ -48,10 +47,7 @@ describe("TransferBetweenUsersUseCase", () => {
           amount: 20,
           balance: 80
         })
-      })
-    );
-    expect(eventPublisher.publish).toHaveBeenNthCalledWith(
-      2,
+      }),
       expect.objectContaining({
         name: "wallet.transaction.created",
         payload: expect.objectContaining({
@@ -63,7 +59,33 @@ describe("TransferBetweenUsersUseCase", () => {
           balance: 120
         })
       })
+    ]);
+  });
+
+  it("bloqueia transferência para a mesma carteira", async () => {
+    const walletRepository = {
+      transferBetweenUsers: jest.fn()
+    };
+    const eventPublisher = { publishMany: jest.fn() };
+    const logger = makeLogger();
+
+    const useCase = new TransferBetweenUsersUseCase(
+      walletRepository as any,
+      eventPublisher as any,
+      logger as any
     );
+
+    await expect(
+      useCase.execute({
+        fromWalletId: "wallet-1",
+        toWalletId: "wallet-1",
+        amount: 20,
+        idempotencyKey: "key-12345"
+      })
+    ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
+
+    expect(walletRepository.transferBetweenUsers).not.toHaveBeenCalled();
+    expect(eventPublisher.publishMany).not.toHaveBeenCalled();
   });
 
   it("propaga erro quando repositório falha", async () => {
@@ -71,7 +93,7 @@ describe("TransferBetweenUsersUseCase", () => {
     const walletRepository = {
       transferBetweenUsers: jest.fn().mockRejectedValue(error)
     };
-    const eventPublisher = { publish: jest.fn() };
+    const eventPublisher = { publishMany: jest.fn() };
     const logger = makeLogger();
 
     const useCase = new TransferBetweenUsersUseCase(
@@ -97,7 +119,7 @@ describe("TransferBetweenUsersUseCase", () => {
     const walletRepository = {
       transferBetweenUsers: jest.fn().mockRejectedValue(error)
     };
-    const eventPublisher = { publish: jest.fn() };
+    const eventPublisher = { publishMany: jest.fn() };
     const logger = makeLogger();
 
     const useCase = new TransferBetweenUsersUseCase(

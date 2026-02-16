@@ -4,17 +4,23 @@ import { RecordWalletEventUseCase } from "../../application/use-cases/RecordWall
 import { Metrics } from "../../../shared/observability/metrics";
 import { Logger } from "../../../shared/observability/logger";
 import { createTraceId, runWithTrace } from "../../../shared/observability/trace";
+import {
+  SchemaRegistryEventCodec,
+  SchemaValidationError
+} from "../../../shared/messaging/SchemaRegistryEventCodec";
 
 export type UsersKafkaConsumerConfig = {
   brokers: string[];
   clientId: string;
   groupId: string;
   internalJwtKey: string;
+  schemaRegistryUrl: string;
 };
 
 export class UsersKafkaConsumer {
   private readonly consumer: Consumer;
   private readonly producer: Producer;
+  private readonly schemaCodec: SchemaRegistryEventCodec;
   private readonly maxRetries = 3;
 
   constructor(
@@ -29,10 +35,11 @@ export class UsersKafkaConsumer {
     });
     this.consumer = kafka.consumer({ groupId: config.groupId });
     this.producer = kafka.producer();
+    this.schemaCodec = new SchemaRegistryEventCodec({ host: config.schemaRegistryUrl });
   }
 
   private async sendToDlq(
-    value: string,
+    value: Buffer,
     baseHeaders: Record<string, any>,
     attempt: number,
     errorMessage: string
@@ -68,7 +75,7 @@ export class UsersKafkaConsumer {
     });
     await this.consumer.run({
       eachMessage: async ({ message }) => {
-        const value = message.value ? message.value.toString() : "";
+        const value = message.value ?? Buffer.from("");
         const baseHeaders = message.headers ?? {};
         const topic = "wallet.transactions";
         this.metrics.recordKafkaConsumed(topic);
@@ -84,14 +91,48 @@ export class UsersKafkaConsumer {
 
         const traceHeader = baseHeaders["x-trace-id"];
         const traceId = traceHeader ? traceHeader.toString() : createTraceId();
+        const expectedEventNames = this.schemaCodec.getExpectedEventNamesByTopic(topic);
+
+        let decodedPayload: {
+          userId: string;
+          transactionId: string;
+          occurredAt: string;
+        } | null = null;
+
+        try {
+          const decodedEvent = await this.schemaCodec.decode(value, expectedEventNames);
+          const payload = decodedEvent.payload;
+          const rawUserId = payload["walletId"];
+          const rawTransactionId = payload["transactionId"];
+          const rawOccurredAt = payload["occurredAt"];
+          if (
+            typeof rawUserId !== "string" ||
+            typeof rawTransactionId !== "string" ||
+            typeof rawOccurredAt !== "string"
+          ) {
+            await this.sendToDlq(value, baseHeaders, 1, "schema_validation_failed");
+            return;
+          }
+          decodedPayload = {
+            userId: rawUserId,
+            transactionId: rawTransactionId,
+            occurredAt: rawOccurredAt
+          };
+        } catch (error) {
+          if (error instanceof SchemaValidationError) {
+            await this.sendToDlq(value, baseHeaders, 1, "schema_validation_failed");
+            return;
+          }
+          await this.sendToDlq(value, baseHeaders, 1, "decode_failed");
+          return;
+        }
 
         for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
           try {
             await runWithTrace(traceId, async () => {
-              const payload = value ? JSON.parse(value) : null;
-              const userId = payload?.payload?.walletId;
-              const transactionId = payload?.payload?.transactionId;
-              const occurredAt = payload?.payload?.occurredAt;
+              const userId = decodedPayload?.userId;
+              const transactionId = decodedPayload?.transactionId;
+              const occurredAt = decodedPayload?.occurredAt;
               if (
                 typeof userId === "string" &&
                 typeof transactionId === "string" &&

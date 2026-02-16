@@ -39,11 +39,13 @@ const logger = createLogger("wallet");
 const metrics = createMetrics("wallet");
 
 const kafkaBrokers = (process.env.KAFKA_BROKERS ?? "localhost:9092").split(",");
+const schemaRegistryUrl = process.env.KAFKA_SCHEMA_REGISTRY_URL ?? "http://localhost:8081";
 const kafkaPublisher = new KafkaEventPublisher(
   {
     clientId: "wallet-service",
     brokers: kafkaBrokers,
-    internalJwt: internalJwtKey
+    internalJwt: internalJwtKey,
+    schemaRegistryUrl
   },
   metrics
 );
@@ -69,7 +71,8 @@ const walletConsumer = new WalletKafkaConsumer(
     clientId: "wallet-consumer",
     brokers: kafkaBrokers,
     groupId: "wallet-users",
-    internalJwtKey
+    internalJwtKey,
+    schemaRegistryUrl
   },
   ensureWalletUseCase,
   metrics,
