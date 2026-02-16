@@ -18,7 +18,7 @@ describe("CreateTransactionUseCase", () => {
       applyTransaction: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date("2024-01-01"),
-        balance: 100
+        balance: "100.0000"
       })
     };
     const eventPublisher = { publish: jest.fn() };
@@ -33,7 +33,7 @@ describe("CreateTransactionUseCase", () => {
     const result = await useCase.execute({
       walletId: "wallet-1",
       type: "credit",
-      amount: 50,
+      amount: "50.0000",
       idempotencyKey: "key-12345"
     });
 
@@ -47,8 +47,8 @@ describe("CreateTransactionUseCase", () => {
           walletId: "wallet-1",
           transactionId: "tx-1",
           type: "credit",
-          amount: 50,
-          balance: 100
+          amount: "50.0000",
+          balance: "100.0000"
         })
       })
     );
@@ -62,7 +62,7 @@ describe("CreateTransactionUseCase", () => {
         idempotencyKey: "key-12345",
         transactionId: "tx-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         status: "compensated",
         step: "compensate",
         createdAt: new Date(),
@@ -83,7 +83,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toEqual(
@@ -102,7 +102,7 @@ describe("CreateTransactionUseCase", () => {
         idempotencyKey: "key-12345",
         transactionId: "tx-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         status: "completed",
         step: "publish_event",
         createdAt: new Date(),
@@ -111,7 +111,7 @@ describe("CreateTransactionUseCase", () => {
       applyTransaction: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date(),
-        balance: 100
+        balance: "100.0000"
       })
     };
     const eventPublisher = { publish: jest.fn() };
@@ -126,7 +126,7 @@ describe("CreateTransactionUseCase", () => {
     const result = await useCase.execute({
       walletId: "wallet-1",
       type: "credit",
-      amount: 50,
+      amount: "50.0000",
       idempotencyKey: "key-12345"
     });
 
@@ -155,7 +155,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+      amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);
@@ -173,7 +173,7 @@ describe("CreateTransactionUseCase", () => {
       applyTransaction: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date("2024-01-01"),
-        balance: 100
+        balance: "100.0000"
       })
     };
     const eventPublisher = { publish: jest.fn().mockRejectedValue(error) };
@@ -189,7 +189,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);
@@ -198,7 +198,7 @@ describe("CreateTransactionUseCase", () => {
       expect.objectContaining({
         walletId: "wallet-1",
         type: "debit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345:compensate"
       })
     );
@@ -214,7 +214,7 @@ describe("CreateTransactionUseCase", () => {
       applyTransaction: jest.fn().mockResolvedValue({
         transactionId: "tx-2",
         createdAt: new Date("2024-01-01"),
-        balance: 50
+        balance: "50.0000"
       })
     };
     const eventPublisher = { publish: jest.fn().mockRejectedValue(error) };
@@ -230,7 +230,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "debit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-54321"
       })
     ).rejects.toBe(error);
@@ -239,7 +239,7 @@ describe("CreateTransactionUseCase", () => {
       expect.objectContaining({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-54321:compensate"
       })
     );
@@ -256,7 +256,7 @@ describe("CreateTransactionUseCase", () => {
       applyTransaction: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date("2024-01-01"),
-        balance: 100
+        balance: "100.0000"
       })
     };
     const eventPublisher = { publish: jest.fn().mockRejectedValue(publishError) };
@@ -272,7 +272,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(publishError);
@@ -293,7 +293,7 @@ describe("CreateTransactionUseCase", () => {
         idempotencyKey: "key-12345",
         transactionId: null,
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         status: "pending",
         step: "apply_transaction",
         createdAt: new Date(),
@@ -314,7 +314,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toEqual(
@@ -344,7 +344,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);
@@ -360,7 +360,7 @@ describe("CreateTransactionUseCase", () => {
       applyTransaction: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date("2024-01-01"),
-        balance: 100
+        balance: "100.0000"
       })
     };
     const eventPublisher = { publish: jest.fn() };
@@ -376,7 +376,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "credit",
-        amount: 50,
+        amount: "50.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);
@@ -385,7 +385,7 @@ describe("CreateTransactionUseCase", () => {
       expect.objectContaining({
         walletId: "wallet-1",
         type: "debit",
-        amount: 50
+        amount: "50.0000"
       })
     );
   });
@@ -412,7 +412,7 @@ describe("CreateTransactionUseCase", () => {
       useCase.execute({
         walletId: "wallet-1",
         type: "debit",
-        amount: 5000,
+        amount: "5000.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);

@@ -14,8 +14,8 @@ describe("TransferBetweenUsersUseCase", () => {
       transferBetweenUsers: jest.fn().mockResolvedValue({
         debitTransactionId: "tx-debit",
         creditTransactionId: "tx-credit",
-        fromBalance: 80,
-        toBalance: 120
+        fromBalance: "80.0000",
+        toBalance: "120.0000"
       })
     };
     const eventPublisher = { publishMany: jest.fn().mockResolvedValue(undefined) };
@@ -30,7 +30,7 @@ describe("TransferBetweenUsersUseCase", () => {
     const result = await useCase.execute({
       fromWalletId: "wallet-1",
       toWalletId: "wallet-2",
-      amount: 20,
+      amount: "20.0000",
       idempotencyKey: "key-12345"
     });
 
@@ -44,8 +44,8 @@ describe("TransferBetweenUsersUseCase", () => {
           walletId: "wallet-1",
           transactionId: "tx-debit",
           type: "debit",
-          amount: 20,
-          balance: 80
+          amount: "20.0000",
+          balance: "80.0000"
         })
       }),
       expect.objectContaining({
@@ -55,8 +55,8 @@ describe("TransferBetweenUsersUseCase", () => {
           walletId: "wallet-2",
           transactionId: "tx-credit",
           type: "credit",
-          amount: 20,
-          balance: 120
+          amount: "20.0000",
+          balance: "120.0000"
         })
       })
     ]);
@@ -79,7 +79,7 @@ describe("TransferBetweenUsersUseCase", () => {
       useCase.execute({
         fromWalletId: "wallet-1",
         toWalletId: "wallet-1",
-        amount: 20,
+        amount: "20.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
@@ -106,7 +106,7 @@ describe("TransferBetweenUsersUseCase", () => {
       useCase.execute({
         fromWalletId: "wallet-1",
         toWalletId: "wallet-2",
-        amount: 20,
+        amount: "20.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);
@@ -132,7 +132,7 @@ describe("TransferBetweenUsersUseCase", () => {
       useCase.execute({
         fromWalletId: "wallet-1",
         toWalletId: "wallet-2",
-        amount: 20,
+        amount: "20.0000",
         idempotencyKey: "key-12345"
       })
     ).rejects.toBe(error);

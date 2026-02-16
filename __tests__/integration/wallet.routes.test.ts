@@ -15,10 +15,10 @@ describe("wallet routes", () => {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date(),
-        balance: 100
+        balance: "100.0000"
       })
     };
-    const getBalanceUseCase = { execute: jest.fn().mockResolvedValue(100) };
+    const getBalanceUseCase = { execute: jest.fn().mockResolvedValue("100.0000") };
     const listTransactionsUseCase = { execute: jest.fn().mockResolvedValue([]) };
 
     const controller = new WalletController(
@@ -51,7 +51,7 @@ describe("wallet routes", () => {
     const response = await request(app)
       .post("/transactions")
       .set("Authorization", `Bearer ${token()}`)
-      .send({ amount: 10 });
+      .send({ amount: "10.0000" });
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe("INVALID_INPUT");
@@ -63,7 +63,7 @@ describe("wallet routes", () => {
     const response = await request(app)
       .post("/transactions")
       .set("Authorization", `Bearer ${token()}`)
-      .send({ user_id: "wallet-1", type: "CREDIT", amount: 10 });
+      .send({ user_id: "wallet-1", type: "CREDIT", amount: "10.0000" });
 
     expect(response.status).toBe(201);
     expect(response.body.type).toBe("CREDIT");
@@ -75,7 +75,7 @@ describe("wallet routes", () => {
     const response = await request(app)
       .post("/transactions")
       .set("Authorization", `Bearer ${token()}`)
-      .send({ user_id: "wallet-2", type: "DEBIT", amount: 10 });
+      .send({ user_id: "wallet-2", type: "DEBIT", amount: "10.0000" });
 
     expect(response.status).toBe(201);
     expect(response.body.type).toBe("DEBIT");
@@ -89,6 +89,6 @@ describe("wallet routes", () => {
       .set("Authorization", `Bearer ${token()}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.amount).toBe(100);
+    expect(response.body.amount).toBe("100.0000");
   });
 });

@@ -123,8 +123,8 @@ describe("SchemaRegistryEventCodec", () => {
         walletId: "w1",
         transactionId: "tx-1",
         type: "credit",
-        amount: 100,
-        balance: 300
+        amount: "100.0000",
+        balance: "300.0000"
       }
     });
 

@@ -7,7 +7,7 @@ export class GetBalanceUseCase {
     private readonly logger: Logger
   ) {}
 
-  async execute(walletId: string): Promise<number> {
+  async execute(walletId: string): Promise<string> {
     this.logger.info("Get balance started", { walletId });
     try {
       const balance = await this.walletRepository.getBalance(walletId);

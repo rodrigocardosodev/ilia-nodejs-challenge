@@ -8,14 +8,14 @@ import { AppError } from "../../../shared/http/AppError";
 export type CreateTransactionInput = {
   walletId: string;
   type: TransactionType;
-  amount: number;
+  amount: string;
   idempotencyKey: string;
 };
 
 export type CreateTransactionOutput = {
   transactionId: string;
   createdAt: Date;
-  balance: number;
+  balance: string;
 };
 
 export class CreateTransactionUseCase {

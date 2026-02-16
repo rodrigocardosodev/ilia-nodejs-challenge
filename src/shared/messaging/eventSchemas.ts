@@ -73,8 +73,8 @@ export const eventSchemaDefinitions: Record<SupportedEventName, EventSchemaDefin
                   symbols: ["credit", "debit"]
                 }
               },
-              { name: "amount", type: "long" },
-              { name: "balance", type: "long" }
+              { name: "amount", type: "string" },
+              { name: "balance", type: "string" }
             ]
           }
         }

@@ -16,10 +16,10 @@ describe("domain entities", () => {
   });
 
   it("cria carteira", () => {
-    const wallet = new Wallet("wallet-1", 100, 2);
+    const wallet = new Wallet("wallet-1", "100.0000", 2);
 
     expect(wallet.id).toBe("wallet-1");
-    expect(wallet.balance).toBe(100);
+    expect(wallet.balance).toBe("100.0000");
     expect(wallet.version).toBe(2);
   });
 
@@ -29,7 +29,7 @@ describe("domain entities", () => {
       "tx-1",
       "wallet-1",
       "credit",
-      50,
+      "50.0000",
       "idem-1",
       createdAt
     );
@@ -37,7 +37,7 @@ describe("domain entities", () => {
     expect(transaction.id).toBe("tx-1");
     expect(transaction.walletId).toBe("wallet-1");
     expect(transaction.type).toBe("credit");
-    expect(transaction.amount).toBe(50);
+    expect(transaction.amount).toBe("50.0000");
     expect(transaction.idempotencyKey).toBe("idem-1");
     expect(transaction.createdAt).toBe(createdAt);
   });

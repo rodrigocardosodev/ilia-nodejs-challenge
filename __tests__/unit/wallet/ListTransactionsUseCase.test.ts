@@ -12,7 +12,7 @@ describe("ListTransactionsUseCase", () => {
         id: "tx-1",
         walletId: "wallet-1",
         type: "credit",
-        amount: 10,
+        amount: "10.0000",
         createdAt: new Date()
       }
     ];

@@ -6,6 +6,7 @@ import { GetBalanceUseCase } from "../../application/use-cases/GetBalanceUseCase
 import { ListTransactionsUseCase } from "../../application/use-cases/ListTransactionsUseCase";
 import { AuthenticatedRequest } from "../../../shared/http/authMiddleware";
 import { AppError } from "../../../shared/http/AppError";
+import { isPositiveMoney, MoneyValidationError, normalizeMoney } from "../../../shared/money";
 
 export class WalletController {
   constructor(
@@ -22,7 +23,7 @@ export class WalletController {
 
     const schema = z.object({
       type: z.enum(["CREDIT", "DEBIT"]),
-      amount: z.number().int().positive()
+      amount: z.string()
     });
 
     const parsed = schema.safeParse(req.body);
@@ -30,17 +31,30 @@ export class WalletController {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }
 
+    let normalizedAmount: string;
+    try {
+      normalizedAmount = normalizeMoney(parsed.data.amount);
+    } catch (error) {
+      if (error instanceof MoneyValidationError) {
+        throw new AppError("INVALID_INPUT", 400, "Invalid request");
+      }
+      throw error;
+    }
+    if (!isPositiveMoney(normalizedAmount)) {
+      throw new AppError("INVALID_INPUT", 400, "Invalid request");
+    }
+
     const idempotencyKey = req.get("Idempotency-Key") ?? randomUUID();
     const result = await this.createTransactionUseCase.execute({
       walletId,
       type: parsed.data.type === "CREDIT" ? "credit" : "debit",
-      amount: parsed.data.amount,
+      amount: normalizedAmount,
       idempotencyKey
     });
     res.status(201).json({
       id: result.transactionId,
       user_id: walletId,
-      amount: parsed.data.amount,
+      amount: normalizedAmount,
       type: parsed.data.type
     });
   };
@@ -52,10 +66,23 @@ export class WalletController {
     }
 
     const schema = z.object({
-      amount: z.number().int().positive()
+      amount: z.string()
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
+      throw new AppError("INVALID_INPUT", 400, "Invalid request");
+    }
+
+    let normalizedAmount: string;
+    try {
+      normalizedAmount = normalizeMoney(parsed.data.amount);
+    } catch (error) {
+      if (error instanceof MoneyValidationError) {
+        throw new AppError("INVALID_INPUT", 400, "Invalid request");
+      }
+      throw error;
+    }
+    if (!isPositiveMoney(normalizedAmount)) {
       throw new AppError("INVALID_INPUT", 400, "Invalid request");
     }
 
@@ -64,13 +91,13 @@ export class WalletController {
     const result = await this.createTransactionUseCase.execute({
       walletId,
       type: "credit",
-      amount: parsed.data.amount,
+      amount: normalizedAmount,
       idempotencyKey
     });
     res.status(201).json({
       id: result.transactionId,
       user_id: walletId,
-      amount: parsed.data.amount,
+      amount: normalizedAmount,
       type: "CREDIT"
     });
   };

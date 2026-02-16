@@ -7,15 +7,15 @@ import { AppError } from "../../../shared/http/AppError";
 export type TransferBetweenUsersInput = {
   fromWalletId: string;
   toWalletId: string;
-  amount: number;
+  amount: string;
   idempotencyKey: string;
 };
 
 export type TransferBetweenUsersOutput = {
   debitTransactionId: string;
   creditTransactionId: string;
-  fromBalance: number;
-  toBalance: number;
+  fromBalance: string;
+  toBalance: string;
 };
 
 export class TransferBetweenUsersUseCase {

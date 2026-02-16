@@ -6,7 +6,7 @@ export class Transaction {
     public readonly id: TransactionId,
     public readonly walletId: string,
     public readonly type: TransactionType,
-    public readonly amount: number,
+    public readonly amount: string,
     public readonly idempotencyKey: string,
     public readonly createdAt: Date
   ) {}

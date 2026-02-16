@@ -3,35 +3,35 @@ import { TransactionType } from "../entities/Transaction";
 export type ApplyTransactionInput = {
   walletId: string;
   type: TransactionType;
-  amount: number;
+  amount: string;
   idempotencyKey: string;
 };
 
 export type ApplyTransactionResult = {
   transactionId: string;
   createdAt: Date;
-  balance: number;
+  balance: string;
 };
 
 export type TransferBetweenUsersInput = {
   fromWalletId: string;
   toWalletId: string;
-  amount: number;
+  amount: string;
   idempotencyKey: string;
 };
 
 export type TransferBetweenUsersResult = {
   debitTransactionId: string;
   creditTransactionId: string;
-  fromBalance: number;
-  toBalance: number;
+  fromBalance: string;
+  toBalance: string;
 };
 
 export type TransactionRecord = {
   id: string;
   walletId: string;
   type: TransactionType;
-  amount: number;
+  amount: string;
   createdAt: Date;
 };
 
@@ -43,7 +43,7 @@ export type SagaRecord = {
   idempotencyKey: string;
   transactionId: string | null;
   type: TransactionType;
-  amount: number;
+  amount: string;
   status: SagaStatus;
   step: string;
   createdAt: Date;
@@ -56,7 +56,7 @@ export type CreateSagaInput = {
   idempotencyKey: string;
   transactionId?: string;
   type: TransactionType;
-  amount: number;
+  amount: string;
   status: SagaStatus;
   step: string;
 };
@@ -71,13 +71,13 @@ export type UpdateSagaInput = {
 export type CompensateTransactionInput = {
   walletId: string;
   type: TransactionType;
-  amount: number;
+  amount: string;
   idempotencyKey: string;
 };
 
 export interface WalletRepository {
   ensureWallet(walletId: string): Promise<void>;
-  getBalance(walletId: string): Promise<number>;
+  getBalance(walletId: string): Promise<string>;
   applyTransaction(input: ApplyTransactionInput): Promise<ApplyTransactionResult>;
   transferBetweenUsers(input: TransferBetweenUsersInput): Promise<TransferBetweenUsersResult>;
   listTransactions(walletId: string, type?: TransactionType): Promise<TransactionRecord[]>;

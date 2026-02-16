@@ -13,6 +13,13 @@ import {
 } from "../../domain/repositories/WalletRepository";
 import { AppError } from "../../../shared/http/AppError";
 import { Metrics } from "../../../shared/observability/metrics";
+import {
+  addMoney,
+  compareMoney,
+  isPositiveMoney,
+  normalizeMoney,
+  subtractMoney
+} from "../../../shared/money";
 
 export class WalletPostgresRepository implements WalletRepository {
   constructor(
@@ -36,13 +43,13 @@ export class WalletPostgresRepository implements WalletRepository {
   async ensureWallet(walletId: string): Promise<void> {
     await this.timedQuery(
       this.pool,
-      "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
-      [walletId],
+      "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
+      [walletId, "1000.0000"],
       "ensure_wallet"
     );
   }
 
-  async getBalance(walletId: string): Promise<number> {
+  async getBalance(walletId: string): Promise<string> {
     const result = await this.timedQuery(
       this.pool,
       "SELECT balance FROM wallets WHERE id = $1",
@@ -50,19 +57,20 @@ export class WalletPostgresRepository implements WalletRepository {
       "get_balance"
     );
     if (result.rows.length === 0) {
-      return 0;
+      return "0.0000";
     }
-    return Number(result.rows[0].balance);
+    return normalizeMoney(result.rows[0].balance);
   }
 
   async applyTransaction(input: ApplyTransactionInput): Promise<ApplyTransactionResult> {
+    const normalizedAmount = normalizeMoney(input.amount);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await this.timedQuery(
         client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
-        [input.walletId],
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
+        [input.walletId, "1000.0000"],
         "ensure_wallet"
       );
 
@@ -85,7 +93,7 @@ export class WalletPostgresRepository implements WalletRepository {
         return {
           transactionId: existing.rows[0].id,
           createdAt: existing.rows[0].created_at,
-          balance: Number(balanceResult.rows[0].balance)
+          balance: normalizeMoney(balanceResult.rows[0].balance)
         };
       }
 
@@ -96,18 +104,20 @@ export class WalletPostgresRepository implements WalletRepository {
         [input.walletId],
         "lock_wallet"
       );
-      const currentBalance = Number(walletResult.rows[0].balance);
+      const currentBalance = normalizeMoney(walletResult.rows[0].balance);
       const nextBalance =
-        input.type === "credit" ? currentBalance + input.amount : currentBalance - input.amount;
+        input.type === "credit"
+          ? addMoney(currentBalance, normalizedAmount)
+          : subtractMoney(currentBalance, normalizedAmount);
 
-      if (nextBalance < 0) {
+      if (compareMoney(nextBalance, "0.0000") < 0) {
         throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
       }
 
       const transactionResult = await this.timedQuery(
         client,
         "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
-        [input.walletId, input.type, input.amount, input.idempotencyKey],
+        [input.walletId, input.type, normalizedAmount, input.idempotencyKey],
         "insert_transaction"
       );
 
@@ -145,7 +155,7 @@ export class WalletPostgresRepository implements WalletRepository {
         return {
           transactionId: existing.rows[0].id,
           createdAt: existing.rows[0].created_at,
-          balance: Number(balanceResult.rows[0].balance)
+          balance: normalizeMoney(balanceResult.rows[0].balance)
         };
       }
       throw error;
@@ -157,19 +167,23 @@ export class WalletPostgresRepository implements WalletRepository {
   async transferBetweenUsers(
     input: TransferBetweenUsersInput
   ): Promise<TransferBetweenUsersResult> {
+    const normalizedAmount = normalizeMoney(input.amount);
+    if (!isPositiveMoney(normalizedAmount)) {
+      throw new AppError("INVALID_INPUT", 400, "Invalid request");
+    }
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await this.timedQuery(
         client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
-        [input.fromWalletId],
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
+        [input.fromWalletId, "1000.0000"],
         "ensure_wallet"
       );
       await this.timedQuery(
         client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
-        [input.toWalletId],
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
+        [input.toWalletId, "1000.0000"],
         "ensure_wallet"
       );
 
@@ -183,7 +197,10 @@ export class WalletPostgresRepository implements WalletRepository {
       if ((existingDebit.rowCount ?? 0) > 0) {
         this.metrics.recordIdempotencyHit();
         const debitRow = existingDebit.rows[0];
-        if (debitRow.type !== "debit" || Number(debitRow.amount) !== input.amount) {
+        if (
+          debitRow.type !== "debit" ||
+          compareMoney(normalizeMoney(debitRow.amount), normalizedAmount) !== 0
+        ) {
           throw new AppError("CONFLICT", 409, "Idempotency conflict");
         }
 
@@ -201,12 +218,12 @@ export class WalletPostgresRepository implements WalletRepository {
             [input.toWalletId],
             "lock_wallet"
           );
-          const currentToBalance = Number(receiverWallet.rows[0].balance);
-          const nextToBalance = currentToBalance + input.amount;
+          const currentToBalance = normalizeMoney(receiverWallet.rows[0].balance);
+          const nextToBalance = addMoney(currentToBalance, normalizedAmount);
           const creditResult = await this.timedQuery(
             client,
             "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id",
-            [input.toWalletId, "credit", input.amount, input.idempotencyKey],
+            [input.toWalletId, "credit", normalizedAmount, input.idempotencyKey],
             "insert_transaction"
           );
           await this.timedQuery(
@@ -225,13 +242,16 @@ export class WalletPostgresRepository implements WalletRepository {
           return {
             debitTransactionId: debitRow.id,
             creditTransactionId: creditResult.rows[0].id,
-            fromBalance: Number(fromBalanceResult.rows[0].balance),
+            fromBalance: normalizeMoney(fromBalanceResult.rows[0].balance),
             toBalance: nextToBalance
           };
         }
 
         const creditRow = existingCredit.rows[0];
-        if (creditRow.type !== "credit" || Number(creditRow.amount) !== input.amount) {
+        if (
+          creditRow.type !== "credit" ||
+          compareMoney(normalizeMoney(creditRow.amount), normalizedAmount) !== 0
+        ) {
           throw new AppError("CONFLICT", 409, "Idempotency conflict");
         }
 
@@ -251,8 +271,8 @@ export class WalletPostgresRepository implements WalletRepository {
         return {
           debitTransactionId: debitRow.id,
           creditTransactionId: creditRow.id,
-          fromBalance: Number(fromBalanceResult.rows[0].balance),
-          toBalance: Number(toBalanceResult.rows[0].balance)
+          fromBalance: normalizeMoney(fromBalanceResult.rows[0].balance),
+          toBalance: normalizeMoney(toBalanceResult.rows[0].balance)
         };
       }
 
@@ -269,23 +289,23 @@ export class WalletPostgresRepository implements WalletRepository {
         [input.toWalletId],
         "lock_wallet"
       );
-      const currentFromBalance = Number(senderWallet.rows[0].balance);
-      const currentToBalance = Number(receiverWallet.rows[0].balance);
-      const nextFromBalance = currentFromBalance - input.amount;
-      if (nextFromBalance < 0) {
+      const currentFromBalance = normalizeMoney(senderWallet.rows[0].balance);
+      const currentToBalance = normalizeMoney(receiverWallet.rows[0].balance);
+      const nextFromBalance = subtractMoney(currentFromBalance, normalizedAmount);
+      if (compareMoney(nextFromBalance, "0.0000") < 0) {
         throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
       }
 
       const debitResult = await this.timedQuery(
         client,
         "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id",
-        [input.fromWalletId, "debit", input.amount, input.idempotencyKey],
+        [input.fromWalletId, "debit", normalizedAmount, input.idempotencyKey],
         "insert_transaction"
       );
       const creditResult = await this.timedQuery(
         client,
         "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id",
-        [input.toWalletId, "credit", input.amount, input.idempotencyKey],
+        [input.toWalletId, "credit", normalizedAmount, input.idempotencyKey],
         "insert_transaction"
       );
 
@@ -295,7 +315,7 @@ export class WalletPostgresRepository implements WalletRepository {
         [nextFromBalance, input.fromWalletId],
         "update_balance"
       );
-      const nextToBalance = currentToBalance + input.amount;
+      const nextToBalance = addMoney(currentToBalance, normalizedAmount);
       await this.timedQuery(
         client,
         "UPDATE wallets SET balance = $1, version = version + 1 WHERE id = $2",
@@ -344,8 +364,8 @@ export class WalletPostgresRepository implements WalletRepository {
           return {
             debitTransactionId: existingDebit.rows[0].id,
             creditTransactionId: existingCredit.rows[0].id,
-            fromBalance: Number(fromBalanceResult.rows[0].balance),
-            toBalance: Number(toBalanceResult.rows[0].balance)
+            fromBalance: normalizeMoney(fromBalanceResult.rows[0].balance),
+            toBalance: normalizeMoney(toBalanceResult.rows[0].balance)
           };
         }
       }
@@ -372,7 +392,7 @@ export class WalletPostgresRepository implements WalletRepository {
       id: row.id,
       walletId: row.wallet_id,
       type: row.type,
-      amount: Number(row.amount),
+      amount: normalizeMoney(row.amount),
       createdAt: new Date(row.created_at)
     }));
   }
@@ -433,7 +453,7 @@ export class WalletPostgresRepository implements WalletRepository {
       idempotencyKey: row.idempotency_key,
       transactionId: row.transaction_id,
       type: row.type,
-      amount: Number(row.amount),
+      amount: normalizeMoney(row.amount),
       status: row.status,
       step: row.step,
       createdAt: new Date(row.created_at),
@@ -458,13 +478,17 @@ export class WalletPostgresRepository implements WalletRepository {
   }
 
   async compensateTransaction(input: CompensateTransactionInput): Promise<void> {
+    const normalizedAmount = normalizeMoney(input.amount);
+    if (!isPositiveMoney(normalizedAmount)) {
+      throw new AppError("INVALID_INPUT", 400, "Invalid request");
+    }
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await this.timedQuery(
         client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, 1000, 0) ON CONFLICT DO NOTHING",
-        [input.walletId],
+        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
+        [input.walletId, "1000.0000"],
         "ensure_wallet"
       );
       const existing = await this.timedQuery(
@@ -483,13 +507,18 @@ export class WalletPostgresRepository implements WalletRepository {
         [input.walletId],
         "lock_wallet"
       );
-      const currentBalance = Number(walletResult.rows[0].balance);
+      const currentBalance = normalizeMoney(walletResult.rows[0].balance);
       const nextBalance =
-        input.type === "credit" ? currentBalance + input.amount : currentBalance - input.amount;
+        input.type === "credit"
+          ? addMoney(currentBalance, normalizedAmount)
+          : subtractMoney(currentBalance, normalizedAmount);
+      if (compareMoney(nextBalance, "0.0000") < 0) {
+        throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
+      }
       await this.timedQuery(
         client,
         "INSERT INTO transactions (wallet_id, type, amount, idempotency_key) VALUES ($1, $2, $3, $4)",
-        [input.walletId, input.type, input.amount, input.idempotencyKey],
+        [input.walletId, input.type, normalizedAmount, input.idempotencyKey],
         "insert_compensation_transaction"
       );
       await this.timedQuery(

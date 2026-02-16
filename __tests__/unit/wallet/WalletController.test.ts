@@ -25,7 +25,7 @@ describe("WalletController", () => {
 
     await expect(
       controller.createTransaction(
-        { userId: "wallet-1", body: { amount: 1 } } as any,
+        { userId: "wallet-1", body: { amount: "1.0000" } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
@@ -36,7 +36,7 @@ describe("WalletController", () => {
 
     await expect(
       controller.createTransaction(
-        { userId: "", body: { type: "CREDIT", amount: 10 } } as any,
+        { userId: "", body: { type: "CREDIT", amount: "10.0000" } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
@@ -46,7 +46,10 @@ describe("WalletController", () => {
     const controller = makeController();
 
     await expect(
-      controller.createTransaction({ body: { type: "CREDIT", amount: 10 } } as any, res() as any)
+      controller.createTransaction(
+        { body: { type: "CREDIT", amount: "10.0000" } } as any,
+        res() as any
+      )
     ).rejects.toEqual(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
   });
 
@@ -55,7 +58,7 @@ describe("WalletController", () => {
 
     await expect(
       controller.createTransaction(
-        { userId: "wallet-1", body: { user_id: "wallet-1", type: "CREDIT", amount: 0 } } as any,
+        { userId: "wallet-1", body: { user_id: "wallet-1", type: "CREDIT", amount: "0.0000" } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
@@ -66,7 +69,7 @@ describe("WalletController", () => {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-1",
         createdAt: new Date(),
-        balance: 100
+        balance: "100.0000"
       })
     };
     const controller = new WalletController(
@@ -79,7 +82,7 @@ describe("WalletController", () => {
     await controller.createTransaction(
       {
         userId: "wallet-1",
-        body: { user_id: "wallet-1", type: "CREDIT", amount: 10 },
+        body: { user_id: "wallet-1", type: "CREDIT", amount: "10" },
         get: () => "idem-1"
       } as any,
       response as any
@@ -93,7 +96,7 @@ describe("WalletController", () => {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-debit",
         createdAt: new Date(),
-        balance: 90
+        balance: "90.0000"
       })
     };
     const controller = new WalletController(
@@ -106,7 +109,7 @@ describe("WalletController", () => {
     await controller.createTransaction(
       {
         userId: "wallet-1",
-        body: { type: "DEBIT", amount: 10 },
+        body: { type: "DEBIT", amount: "10.0000" },
         get: () => undefined
       } as any,
       response as any
@@ -115,14 +118,14 @@ describe("WalletController", () => {
     expect(createTransactionUseCase.execute).toHaveBeenCalledWith({
       walletId: "wallet-1",
       type: "debit",
-      amount: 10,
+      amount: "10.0000",
       idempotencyKey: "generated-id"
     });
     expect(response.status).toHaveBeenCalledWith(201);
     expect(response.json).toHaveBeenCalledWith({
       id: "tx-debit",
       user_id: "wallet-1",
-      amount: 10,
+      amount: "10.0000",
       type: "DEBIT"
     });
   });
@@ -132,7 +135,7 @@ describe("WalletController", () => {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-2",
         createdAt: new Date(),
-        balance: 110
+        balance: "110.0000"
       })
     };
     const controller = new WalletController(
@@ -143,7 +146,7 @@ describe("WalletController", () => {
     const response = res();
 
     await controller.deposit(
-      { userId: "wallet-1", body: { amount: 10 }, get: () => "idem-2" } as any,
+      { userId: "wallet-1", body: { amount: "10.0000" }, get: () => "idem-2" } as any,
       response as any
     );
 
@@ -151,7 +154,7 @@ describe("WalletController", () => {
     expect(response.json).toHaveBeenCalledWith({
       id: "tx-2",
       user_id: "wallet-1",
-      amount: 10,
+      amount: "10.0000",
       type: "CREDIT"
     });
   });
@@ -161,7 +164,7 @@ describe("WalletController", () => {
       execute: jest.fn().mockResolvedValue({
         transactionId: "tx-3",
         createdAt: new Date(),
-        balance: 120
+        balance: "120.0000"
       })
     };
     const controller = new WalletController(
@@ -172,14 +175,14 @@ describe("WalletController", () => {
     const response = res();
 
     await controller.deposit(
-      { userId: "wallet-1", body: { amount: 20 }, get: () => undefined } as any,
+      { userId: "wallet-1", body: { amount: "20.0000" }, get: () => undefined } as any,
       response as any
     );
 
     expect(createTransactionUseCase.execute).toHaveBeenCalledWith({
       walletId: "wallet-1",
       type: "credit",
-      amount: 20,
+      amount: "20.0000",
       idempotencyKey: "generated-id"
     });
     expect(response.status).toHaveBeenCalledWith(201);
@@ -196,7 +199,9 @@ describe("WalletController", () => {
   it("bloqueia depósito sem userId no request", async () => {
     const controller = makeController();
 
-    await expect(controller.deposit({ body: { amount: 10 } } as any, res() as any)).rejects.toEqual(
+    await expect(
+      controller.deposit({ body: { amount: "10.0000" } } as any, res() as any)
+    ).rejects.toEqual(
       new AppError("UNAUTHORIZED", 401, "Unauthorized")
     );
   });
@@ -206,7 +211,7 @@ describe("WalletController", () => {
 
     await expect(
       controller.deposit(
-        { userId: "wallet-1", body: { amount: -1 } } as any,
+        { userId: "wallet-1", body: { amount: "-1.0000" } } as any,
         res() as any
       )
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
@@ -223,7 +228,7 @@ describe("WalletController", () => {
   it("retorna saldo", async () => {
     const controller = new WalletController(
       { execute: jest.fn() } as any,
-      { execute: jest.fn().mockResolvedValue(200) } as any,
+      { execute: jest.fn().mockResolvedValue("200.0000") } as any,
       { execute: jest.fn() } as any
     );
     const response = res();
@@ -231,7 +236,7 @@ describe("WalletController", () => {
     await controller.getBalance({ userId: "wallet-1" } as any, response as any);
 
     expect(response.status).toHaveBeenCalledWith(200);
-    expect(response.json).toHaveBeenCalledWith({ amount: 200 });
+    expect(response.json).toHaveBeenCalledWith({ amount: "200.0000" });
   });
 
   it("bloqueia listagem sem usuário", async () => {
@@ -268,7 +273,7 @@ describe("WalletController", () => {
           id: "tx-1",
           walletId: "wallet-1",
           type: "credit",
-          amount: 10,
+          amount: "10.0000",
           createdAt: new Date()
         }
       ])
@@ -291,7 +296,7 @@ describe("WalletController", () => {
         id: "tx-1",
         user_id: "wallet-1",
         type: "CREDIT",
-        amount: 10
+        amount: "10.0000"
       }
     ]);
   });
@@ -303,7 +308,7 @@ describe("WalletController", () => {
           id: "tx-2",
           walletId: "wallet-1",
           type: "debit",
-          amount: 25,
+          amount: "25.0000",
           createdAt: new Date()
         }
       ])
@@ -326,8 +331,19 @@ describe("WalletController", () => {
         id: "tx-2",
         user_id: "wallet-1",
         type: "DEBIT",
-        amount: 25
+        amount: "25.0000"
       }
     ]);
+  });
+
+  it("rejeita amount com mais de 4 casas", async () => {
+    const controller = makeController();
+
+    await expect(
+      controller.createTransaction(
+        { userId: "wallet-1", body: { type: "CREDIT", amount: "10.12345" } } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
   });
 });
