@@ -25,7 +25,7 @@ export class UsersController {
     const schema = z.object({
       first_name: z.string().min(2),
       last_name: z.string().min(2),
-      email: z.string().email(),
+      email: z.email(),
       password: z.string().min(6)
     });
     const parsed = schema.safeParse(req.body);
@@ -50,7 +50,7 @@ export class UsersController {
 
   login = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const schema = z.object({
-      email: z.string().email(),
+      email: z.email(),
       password: z.string()
     });
     const parsed = schema.safeParse(req.body);
@@ -132,7 +132,7 @@ export class UsersController {
     const schema = z.object({
       first_name: z.string().min(2),
       last_name: z.string().min(2),
-      email: z.string().email(),
+      email: z.email(),
       password: z.string().min(6)
     });
     const parsed = schema.safeParse(req.body);
