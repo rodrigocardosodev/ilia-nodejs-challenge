@@ -1,9 +1,12 @@
+import express from "express";
 import jwt from "jsonwebtoken";
+import request from "supertest";
 import { AppError } from "../../../src/shared/http/AppError";
 import { asyncHandler } from "../../../src/shared/http/asyncHandler";
 import { authMiddleware } from "../../../src/shared/http/authMiddleware";
 import { createErrorMiddleware } from "../../../src/shared/http/errorMiddleware";
 import { requireIdempotencyKey } from "../../../src/shared/http/idempotencyKeyMiddleware";
+import { createRateLimiters } from "../../../src/shared/http/rateLimitMiddleware";
 import { runWithTrace } from "../../../src/shared/observability/trace";
 
 describe("shared http", () => {
@@ -242,6 +245,73 @@ describe("shared http", () => {
       requireIdempotencyKey(req, {} as any, next);
 
       expect(next).toHaveBeenCalledWith();
+    });
+  });
+
+  describe("rateLimitMiddleware", () => {
+    it("bloqueia requests quando excede o limite de escrita", async () => {
+      const logger = { error: jest.fn(), info: jest.fn() };
+      const app = express();
+      app.use(express.json());
+      const rateLimiters = createRateLimiters({
+        namespace: "test-unit-write",
+        auth: { windowMs: 60_000, limit: 10 },
+        write: { windowMs: 60_000, limit: 1 }
+      });
+      app.post("/write", rateLimiters.write, (_req, res) => {
+        res.status(201).json({ ok: true });
+      });
+      app.use(createErrorMiddleware(logger as any));
+
+      const first = await request(app).post("/write");
+      const second = await request(app).post("/write");
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(429);
+      expect(second.body.code).toBe("TOO_MANY_REQUESTS");
+    });
+
+    it("não conta sucesso no limiter de auth", async () => {
+      const logger = { error: jest.fn(), info: jest.fn() };
+      const app = express();
+      app.use(express.json());
+      const rateLimiters = createRateLimiters({
+        namespace: "test-unit-auth-success",
+        auth: { windowMs: 60_000, limit: 1 },
+        write: { windowMs: 60_000, limit: 10 }
+      });
+      app.post("/auth", rateLimiters.auth, (_req, res) => {
+        res.status(200).json({ ok: true });
+      });
+      app.use(createErrorMiddleware(logger as any));
+
+      const first = await request(app).post("/auth");
+      const second = await request(app).post("/auth");
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+    });
+
+    it("conta falhas no limiter de auth e retorna 429 no excesso", async () => {
+      const logger = { error: jest.fn(), info: jest.fn() };
+      const app = express();
+      app.use(express.json());
+      const rateLimiters = createRateLimiters({
+        namespace: "test-unit-auth-fail",
+        auth: { windowMs: 60_000, limit: 1 },
+        write: { windowMs: 60_000, limit: 10 }
+      });
+      app.post("/auth", rateLimiters.auth, (_req, _res, next) => {
+        next(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
+      });
+      app.use(createErrorMiddleware(logger as any));
+
+      const first = await request(app).post("/auth");
+      const second = await request(app).post("/auth");
+
+      expect(first.status).toBe(401);
+      expect(second.status).toBe(429);
+      expect(second.body.code).toBe("TOO_MANY_REQUESTS");
     });
   });
 });

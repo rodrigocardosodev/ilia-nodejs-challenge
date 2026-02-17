@@ -1,6 +1,6 @@
 export const MONEY_SCALE = 4;
 
-const MONEY_REGEX = /^\d+(?:\.\d{1,4})?$/;
+const MONEY_REGEX = /^-?\d+(?:\.\d{1,4})?$/;
 const MONEY_FACTOR = 10n ** BigInt(MONEY_SCALE);
 
 export class MoneyValidationError extends Error {

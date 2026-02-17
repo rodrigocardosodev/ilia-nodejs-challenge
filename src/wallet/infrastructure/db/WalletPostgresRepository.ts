@@ -22,17 +22,19 @@ import {
 } from "../../../shared/money";
 
 export class WalletPostgresRepository implements WalletRepository {
+  private readonly duplicateKeyErrorCode = "23505";
+
   constructor(
     private readonly pool: Pool,
     private readonly metrics: Metrics
   ) {}
 
   private async timedQuery(
-    client: { query: (text: string, params?: any[]) => Promise<QueryResult<any>> },
+    client: { query: (text: string, params?: unknown[]) => Promise<QueryResult> },
     query: string,
-    params: any[],
+    params: unknown[],
     operation: string
-  ): Promise<QueryResult<any>> {
+  ): Promise<QueryResult> {
     const start = process.hrtime.bigint();
     const result = await client.query(query, params);
     const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
@@ -134,12 +136,12 @@ export class WalletPostgresRepository implements WalletRepository {
         createdAt: transactionResult.rows[0].created_at,
         balance: nextBalance
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query("ROLLBACK");
       if (error instanceof AppError) {
         throw error;
       }
-      if (error?.code === "23505") {
+      if (this.isDuplicateKeyError(error)) {
         const existing = await this.timedQuery(
           this.pool,
           "SELECT id, created_at FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
@@ -330,12 +332,12 @@ export class WalletPostgresRepository implements WalletRepository {
         fromBalance: nextFromBalance,
         toBalance: nextToBalance
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       await client.query("ROLLBACK");
       if (error instanceof AppError) {
         throw error;
       }
-      if (error?.code === "23505") {
+      if (this.isDuplicateKeyError(error)) {
         const existingDebit = await this.timedQuery(
           this.pool,
           "SELECT id, amount, type FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
@@ -379,7 +381,7 @@ export class WalletPostgresRepository implements WalletRepository {
     walletId: string,
     type?: "credit" | "debit"
   ): Promise<TransactionRecord[]> {
-    const params: any[] = [walletId];
+    const params: unknown[] = [walletId];
     let query =
       "SELECT id, wallet_id, type, amount, created_at FROM transactions WHERE wallet_id = $1";
     if (type) {
@@ -534,5 +536,12 @@ export class WalletPostgresRepository implements WalletRepository {
     } finally {
       client.release();
     }
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    if (!error || typeof error !== "object" || !("code" in error)) {
+      return false;
+    }
+    return (error as { code?: string }).code === this.duplicateKeyErrorCode;
   }
 }

@@ -18,6 +18,7 @@ import { traceMiddleware } from "../shared/http/traceMiddleware";
 import { createLogger } from "../shared/observability/logger";
 import { createMetrics } from "../shared/observability/metrics";
 import { requestLoggerMiddleware } from "../shared/http/requestLoggerMiddleware";
+import { createRateLimiters } from "../shared/http/rateLimitMiddleware";
 
 dotenv.config();
 
@@ -85,6 +86,22 @@ app.use(traceMiddleware);
 app.use(metrics.httpMiddleware);
 app.use(requestLoggerMiddleware(logger));
 app.get("/metrics", metrics.metricsHandler);
+const authRateLimitWindowMs = Number(process.env.RATE_LIMIT_AUTH_WINDOW_MS ?? 10 * 60 * 1000);
+const authRateLimitMax = Number(process.env.RATE_LIMIT_AUTH_MAX ?? 5);
+const writeRateLimitWindowMs = Number(process.env.RATE_LIMIT_WRITE_WINDOW_MS ?? 60 * 1000);
+const writeRateLimitMax = Number(process.env.RATE_LIMIT_WRITE_MAX ?? 30);
+const rateLimiters = createRateLimiters({
+  namespace: "wallet",
+  redis,
+  auth: {
+    windowMs: authRateLimitWindowMs,
+    limit: authRateLimitMax
+  },
+  write: {
+    windowMs: writeRateLimitWindowMs,
+    limit: writeRateLimitMax
+  }
+});
 app.use(
   "/",
   buildHealthRoutes(
@@ -102,7 +119,8 @@ app.use(
     {
       jwtKey,
       metrics
-    }
+    },
+    rateLimiters
   )
 );
 app.use(createErrorMiddleware(logger));

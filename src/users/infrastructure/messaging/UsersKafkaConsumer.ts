@@ -1,4 +1,5 @@
-import { Kafka, Consumer, Producer } from "kafkajs";
+import { Kafka, Consumer, Producer, IHeaders } from "kafkajs";
+import { Buffer } from "node:buffer";
 import jwt from "jsonwebtoken";
 import { RecordWalletEventUseCase } from "../../application/use-cases/RecordWalletEventUseCase";
 import { Metrics } from "../../../shared/observability/metrics";
@@ -22,6 +23,8 @@ export class UsersKafkaConsumer {
   private readonly producer: Producer;
   private readonly schemaCodec: SchemaRegistryEventCodec;
   private readonly maxRetries = 3;
+  private readonly messageTopic = "wallet.transactions";
+  private readonly dlqTopic = "wallet.transactions.dlq";
 
   constructor(
     private readonly config: UsersKafkaConsumerConfig,
@@ -40,7 +43,7 @@ export class UsersKafkaConsumer {
 
   private async sendToDlq(
     value: Buffer,
-    baseHeaders: Record<string, any>,
+    baseHeaders: IHeaders,
     attempt: number,
     errorMessage: string
   ): Promise<void> {
@@ -48,7 +51,7 @@ export class UsersKafkaConsumer {
       expiresIn: "5m"
     });
     await this.producer.send({
-      topic: "wallet.transactions.dlq",
+      topic: this.dlqTopic,
       messages: [
         {
           value,
@@ -61,23 +64,23 @@ export class UsersKafkaConsumer {
         }
       ]
     });
-    this.metrics.recordKafkaDlq("wallet.transactions.dlq");
-    this.metrics.recordKafkaError("wallet.transactions");
-    this.logger.error("Kafka message sent to DLQ", { topic: "wallet.transactions" });
+    this.metrics.recordKafkaDlq(this.dlqTopic);
+    this.metrics.recordKafkaError(this.messageTopic);
+    this.logger.error("Kafka message sent to DLQ", { topic: this.messageTopic });
   }
 
   async start(): Promise<void> {
     await this.consumer.connect();
     await this.producer.connect();
     await this.consumer.subscribe({
-      topic: "wallet.transactions",
+      topic: this.messageTopic,
       fromBeginning: false
     });
     await this.consumer.run({
       eachMessage: async ({ message }) => {
         const value = message.value ?? Buffer.from("");
         const baseHeaders = message.headers ?? {};
-        const topic = "wallet.transactions";
+        const topic = this.messageTopic;
         this.metrics.recordKafkaConsumed(topic);
 
         const header = baseHeaders["x-internal-jwt"];
@@ -143,7 +146,7 @@ export class UsersKafkaConsumer {
             });
             this.logger.info("Kafka message processed", { topic });
             return;
-          } catch (error: any) {
+          } catch (error: unknown) {
             if (attempt < this.maxRetries) {
               await new Promise((resolve) => setTimeout(resolve, attempt * 500));
               continue;
@@ -152,7 +155,7 @@ export class UsersKafkaConsumer {
               value,
               baseHeaders,
               attempt,
-              String(error?.message ?? "processing_failed")
+              this.getErrorMessage(error)
             );
             return;
           }
@@ -164,5 +167,12 @@ export class UsersKafkaConsumer {
   async stop(): Promise<void> {
     await this.consumer.disconnect();
     await this.producer.disconnect();
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.length > 0) {
+      return error.message;
+    }
+    return "processing_failed";
   }
 }

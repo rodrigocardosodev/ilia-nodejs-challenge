@@ -415,6 +415,12 @@ describe("CreateTransactionUseCase", () => {
         amount: "5000.0000",
         idempotencyKey: "key-12345"
       })
-    ).rejects.toBe(error);
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "INSUFFICIENT_FUNDS",
+        statusCode: 422
+      })
+    );
+    expect(eventPublisher.publish).not.toHaveBeenCalled();
   });
 });

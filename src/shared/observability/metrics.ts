@@ -1,9 +1,10 @@
 import client, { Counter, Gauge, Histogram, Registry } from "prom-client";
+import { NextFunction, Request, Response } from "express";
 
 export type Metrics = {
   registry: Registry;
-  httpMiddleware: (req: any, res: any, next: any) => void;
-  metricsHandler: (_req: any, res: any) => Promise<void>;
+  httpMiddleware: (req: Request, res: Response, next: NextFunction) => void;
+  metricsHandler: (_req: Request, res: Response) => Promise<void>;
   recordAuthFailure: (reason: string) => void;
   recordDbQuery: (db: string, operation: string, durationSeconds: number) => void;
   recordCacheHit: (cache: string) => void;
@@ -151,7 +152,7 @@ export const createMetrics = (service: string): Metrics => {
     registers: [registry]
   });
 
-  const httpMiddleware = (req: any, res: any, next: any) => {
+  const httpMiddleware = (req: Request, res: Response, next: NextFunction) => {
     const start = process.hrtime.bigint();
     res.on("finish", () => {
       const route = req.route
@@ -170,7 +171,7 @@ export const createMetrics = (service: string): Metrics => {
     next();
   };
 
-  const metricsHandler = async (_req: any, res: any) => {
+  const metricsHandler = async (_req: Request, res: Response) => {
     res.setHeader("Content-Type", registry.contentType);
     res.end(await registry.metrics());
   };

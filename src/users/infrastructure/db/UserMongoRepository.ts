@@ -37,8 +37,8 @@ export class UserMongoRepository implements UserRepository {
           createdAt: user.createdAt
         })
       );
-    } catch (error: any) {
-      if (error?.code === 11000) {
+    } catch (error: unknown) {
+      if (this.isDuplicateEmailError(error)) {
         throw new AppError("CONFLICT", 409, "Email already in use");
       }
       throw error;
@@ -120,8 +120,8 @@ export class UserMongoRepository implements UserRepository {
         doc.password,
         new Date(doc.createdAt)
       );
-    } catch (error: any) {
-      if (error?.code === 11000) {
+    } catch (error: unknown) {
+      if (this.isDuplicateEmailError(error)) {
         throw new AppError("CONFLICT", 409, "Email already in use");
       }
       throw error;
@@ -131,5 +131,12 @@ export class UserMongoRepository implements UserRepository {
   async deleteById(id: string): Promise<boolean> {
     const result = await this.timed("delete_user", () => UserModel.deleteOne({ _id: id }));
     return (result.deletedCount ?? 0) > 0;
+  }
+
+  private isDuplicateEmailError(error: unknown): boolean {
+    if (!error || typeof error !== "object" || !("code" in error)) {
+      return false;
+    }
+    return (error as { code?: number }).code === 11000;
   }
 }

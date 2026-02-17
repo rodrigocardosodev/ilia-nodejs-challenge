@@ -1,4 +1,5 @@
 import { SchemaRegistry } from "@kafkajs/confluent-schema-registry";
+import { Buffer } from "node:buffer";
 import {
   eventSchemaDefinitions,
   supportedEventNames,

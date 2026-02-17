@@ -62,6 +62,25 @@ describe("WalletController", () => {
     ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
   });
 
+  it("retorna INVALID_INPUT para amount negativo sem chamar use case", async () => {
+    const createTransactionUseCase = {
+      execute: jest.fn()
+    };
+    const controller = new WalletController(
+      createTransactionUseCase as any,
+      { execute: jest.fn() } as any,
+      { execute: jest.fn() } as any
+    );
+
+    await expect(
+      controller.createTransaction(
+        { userId: "wallet-1", body: { type: "DEBIT", amount: "-10.0000" }, get: () => "idem-invalid" } as any,
+        res() as any
+      )
+    ).rejects.toEqual(new AppError("INVALID_INPUT", 400, "Invalid request"));
+    expect(createTransactionUseCase.execute).not.toHaveBeenCalled();
+  });
+
   it("cria transação com sucesso", async () => {
     const createTransactionUseCase = {
       execute: jest.fn().mockResolvedValue({
@@ -117,6 +136,35 @@ describe("WalletController", () => {
     );
 
     expect(createTransactionUseCase.execute).not.toHaveBeenCalled();
+  });
+
+  it("propaga INSUFFICIENT_FUNDS quando use case rejeita por saldo", async () => {
+    const createTransactionUseCase = {
+      execute: jest
+        .fn()
+        .mockRejectedValue(new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds"))
+    };
+    const controller = new WalletController(
+      createTransactionUseCase as any,
+      { execute: jest.fn() } as any,
+      { execute: jest.fn() } as any
+    );
+
+    await expect(
+      controller.createTransaction(
+        {
+          userId: "wallet-1",
+          body: { type: "DEBIT", amount: "9999.0000" },
+          get: () => "idem-insufficient"
+        } as any,
+        res() as any
+      )
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "INSUFFICIENT_FUNDS",
+        statusCode: 422
+      })
+    );
   });
 
   it("faz depósito", async () => {

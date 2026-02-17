@@ -3,6 +3,8 @@ import request from "supertest";
 import { UsersController } from "../../src/users/interfaces/http/UsersController";
 import { buildUsersRoutes } from "../../src/users/interfaces/http/routes";
 import { createErrorMiddleware } from "../../src/shared/http/errorMiddleware";
+import { createRateLimiters, RouteRateLimiters } from "../../src/shared/http/rateLimitMiddleware";
+import { AppError } from "../../src/shared/http/AppError";
 
 describe("users routes", () => {
   const jwtKey = "secret";
@@ -12,7 +14,8 @@ describe("users routes", () => {
   const buildApp = (
     registerResult: any,
     authUser: any,
-    meUser: any
+    meUser: any,
+    rateLimiters?: Partial<RouteRateLimiters>
   ) => {
     const registerUserUseCase = { execute: jest.fn().mockResolvedValue(registerResult) };
     const authenticateUserUseCase = { execute: jest.fn().mockResolvedValue(authUser) };
@@ -32,7 +35,7 @@ describe("users routes", () => {
 
     const app = express();
     app.use(express.json());
-    app.use("/", buildUsersRoutes(controller, { jwtKey, metrics } as any));
+    app.use("/", buildUsersRoutes(controller, { jwtKey, metrics } as any, rateLimiters));
     app.use(createErrorMiddleware(logger as any));
     return app;
   };
@@ -201,5 +204,114 @@ describe("users routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.id).toBe("u1");
+  });
+
+  it("aplica rate limit no /users quando excede limite de escrita", async () => {
+    const rateLimiters = createRateLimiters({
+      namespace: "test-users-write",
+      auth: { windowMs: 60_000, limit: 10 },
+      write: { windowMs: 60_000, limit: 1 }
+    });
+    const app = buildApp(
+      {
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com",
+        createdAt: new Date(),
+        created: true
+      },
+      { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" },
+      { id: "u1", firstName: "Ana", lastName: "Silva", email: "a@a.com" },
+      rateLimiters
+    );
+
+    const first = await request(app)
+      .post("/users")
+      .set("Idempotency-Key", "idem-register-1")
+      .send({
+        first_name: "Ana",
+        last_name: "Silva",
+        email: "a@a.com",
+        password: "secret123"
+      });
+    const second = await request(app)
+      .post("/users")
+      .set("Idempotency-Key", "idem-register-2")
+      .send({
+        first_name: "Ana",
+        last_name: "Silva",
+        email: "a2@a.com",
+        password: "secret123"
+      });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(429);
+    expect(second.body.code).toBe("TOO_MANY_REQUESTS");
+  });
+
+  it("aplica rate limit no /auth para falhas consecutivas", async () => {
+    const registerUserUseCase = {
+      execute: jest.fn().mockResolvedValue({
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com",
+        createdAt: new Date(),
+        created: true
+      })
+    };
+    const authenticateUserUseCase = {
+      execute: jest.fn().mockRejectedValue(new AppError("UNAUTHORIZED", 401, "Unauthorized"))
+    };
+    const getUserUseCase = {
+      execute: jest.fn().mockResolvedValue({
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com"
+      })
+    };
+    const listUsersUseCase = { execute: jest.fn().mockResolvedValue([]) };
+    const updateUserUseCase = {
+      execute: jest.fn().mockResolvedValue({
+        id: "u1",
+        firstName: "Ana",
+        lastName: "Silva",
+        email: "a@a.com"
+      })
+    };
+    const deleteUserUseCase = { execute: jest.fn().mockResolvedValue(undefined) };
+    const controller = new UsersController(
+      registerUserUseCase as any,
+      getUserUseCase as any,
+      authenticateUserUseCase as any,
+      listUsersUseCase as any,
+      updateUserUseCase as any,
+      deleteUserUseCase as any,
+      jwtKey
+    );
+    const app = express();
+    app.use(express.json());
+    app.use(
+      "/",
+      buildUsersRoutes(
+        controller,
+        { jwtKey, metrics } as any,
+        createRateLimiters({
+          namespace: "test-users-auth",
+          auth: { windowMs: 60_000, limit: 1 },
+          write: { windowMs: 60_000, limit: 10 }
+        })
+      )
+    );
+    app.use(createErrorMiddleware(logger as any));
+
+    const first = await request(app).post("/auth").send({ email: "a@a.com", password: "wrong" });
+    const second = await request(app).post("/auth").send({ email: "a@a.com", password: "wrong" });
+
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
+    expect(second.body.code).toBe("TOO_MANY_REQUESTS");
   });
 });

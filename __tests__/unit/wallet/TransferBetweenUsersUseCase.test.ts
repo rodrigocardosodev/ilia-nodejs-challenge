@@ -135,7 +135,13 @@ describe("TransferBetweenUsersUseCase", () => {
         amount: "20.0000",
         idempotencyKey: "key-12345"
       })
-    ).rejects.toBe(error);
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "INSUFFICIENT_FUNDS",
+        statusCode: 422
+      })
+    );
     expect(logger.error).toHaveBeenCalled();
+    expect(eventPublisher.publishMany).not.toHaveBeenCalled();
   });
 });
