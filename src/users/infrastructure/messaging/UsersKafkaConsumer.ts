@@ -151,12 +151,7 @@ export class UsersKafkaConsumer {
               await new Promise((resolve) => setTimeout(resolve, attempt * 500));
               continue;
             }
-            await this.sendToDlq(
-              value,
-              baseHeaders,
-              attempt,
-              this.getErrorMessage(error)
-            );
+            await this.sendToDlq(value, baseHeaders, attempt, this.getErrorMessage(error));
             return;
           }
         }
