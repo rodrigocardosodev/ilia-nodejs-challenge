@@ -16,13 +16,16 @@ export type UsersKafkaConsumerConfig = {
   groupId: string;
   internalJwtKey: string;
   schemaRegistryUrl: string;
+  maxRetries?: number;
+  retryBaseDelayMs?: number;
 };
 
 export class UsersKafkaConsumer {
   private readonly consumer: Consumer;
   private readonly producer: Producer;
   private readonly schemaCodec: SchemaRegistryEventCodec;
-  private readonly maxRetries = 3;
+  private readonly maxRetries: number;
+  private readonly retryBaseDelayMs: number;
   private readonly messageTopic = "wallet.transactions";
   private readonly dlqTopic = "wallet.transactions.dlq";
 
@@ -39,6 +42,8 @@ export class UsersKafkaConsumer {
     this.consumer = kafka.consumer({ groupId: config.groupId });
     this.producer = kafka.producer();
     this.schemaCodec = new SchemaRegistryEventCodec({ host: config.schemaRegistryUrl });
+    this.maxRetries = config.maxRetries ?? 3;
+    this.retryBaseDelayMs = config.retryBaseDelayMs ?? 500;
   }
 
   private async sendToDlq(
@@ -105,7 +110,7 @@ export class UsersKafkaConsumer {
         try {
           const decodedEvent = await this.schemaCodec.decode(value, expectedEventNames);
           const payload = decodedEvent.payload;
-          const rawUserId = payload["walletId"];
+          const rawUserId = payload["userId"];
           const rawTransactionId = payload["transactionId"];
           const rawOccurredAt = payload["occurredAt"];
           if (
@@ -132,23 +137,20 @@ export class UsersKafkaConsumer {
 
         for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
           try {
+            if (!decodedPayload) {
+              await this.sendToDlq(value, baseHeaders, attempt, "schema_validation_failed");
+              return;
+            }
+            const { userId, transactionId, occurredAt } = decodedPayload;
             await runWithTrace(traceId, async () => {
-              const userId = decodedPayload?.userId;
-              const transactionId = decodedPayload?.transactionId;
-              const occurredAt = decodedPayload?.occurredAt;
-              if (
-                typeof userId === "string" &&
-                typeof transactionId === "string" &&
-                typeof occurredAt === "string"
-              ) {
-                await this.recordWalletEventUseCase.execute(userId, transactionId, occurredAt);
-              }
+              await this.recordWalletEventUseCase.execute(userId, transactionId, occurredAt);
             });
             this.logger.info("Kafka message processed", { topic });
             return;
           } catch (error: unknown) {
             if (attempt < this.maxRetries) {
-              await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+              const delay = this.retryBaseDelayMs * 2 ** (attempt - 1);
+              await new Promise((resolve) => setTimeout(resolve, delay));
               continue;
             }
             await this.sendToDlq(value, baseHeaders, attempt, this.getErrorMessage(error));

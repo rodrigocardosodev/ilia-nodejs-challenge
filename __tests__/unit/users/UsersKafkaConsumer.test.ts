@@ -125,4 +125,61 @@ describe("UsersKafkaConsumer", () => {
       })
     );
   });
+
+  it("processa evento válido usando userId do payload", async () => {
+    verifyMock.mockReturnValue(undefined);
+    getExpectedEventNamesByTopicMock.mockReturnValue(["wallet.transaction.created"]);
+    decodeMock.mockResolvedValue({
+      name: "wallet.transaction.created",
+      payload: {
+        userId: "user-1",
+        transactionId: "tx-1",
+        occurredAt: "2026-02-17T00:00:00.000Z"
+      }
+    });
+    consumerRunMock.mockImplementation(async ({ eachMessage }) => {
+      await eachMessage({
+        message: {
+          value: Buffer.from("valid"),
+          headers: {
+            "x-internal-jwt": Buffer.from("internal-token"),
+            "x-trace-id": Buffer.from("trace-1")
+          }
+        }
+      });
+    });
+
+    const recordWalletEventUseCase = { execute: jest.fn().mockResolvedValue(undefined) };
+    const metrics = {
+      recordKafkaConsumed: jest.fn(),
+      recordKafkaDlq: jest.fn(),
+      recordKafkaError: jest.fn()
+    };
+    const logger = {
+      info: jest.fn(),
+      error: jest.fn()
+    };
+
+    const consumer = new UsersKafkaConsumer(
+      {
+        clientId: "users-consumer",
+        brokers: ["localhost:9092"],
+        groupId: "users-wallet",
+        internalJwtKey: "internal",
+        schemaRegistryUrl: "http://localhost:8081"
+      },
+      recordWalletEventUseCase as any,
+      metrics as any,
+      logger as any
+    );
+
+    await consumer.start();
+
+    expect(recordWalletEventUseCase.execute).toHaveBeenCalledWith(
+      "user-1",
+      "tx-1",
+      "2026-02-17T00:00:00.000Z"
+    );
+    expect(producerSendMock).not.toHaveBeenCalled();
+  });
 });

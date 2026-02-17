@@ -5,8 +5,11 @@ import { AppError } from "../../../src/shared/http/AppError";
 import { asyncHandler } from "../../../src/shared/http/asyncHandler";
 import { authMiddleware } from "../../../src/shared/http/authMiddleware";
 import { createErrorMiddleware } from "../../../src/shared/http/errorMiddleware";
+import { buildHealthRoutes } from "../../../src/shared/http/healthRoutes";
 import { requireIdempotencyKey } from "../../../src/shared/http/idempotencyKeyMiddleware";
 import { createRateLimiters } from "../../../src/shared/http/rateLimitMiddleware";
+import { requestLoggerMiddleware } from "../../../src/shared/http/requestLoggerMiddleware";
+import { traceMiddleware } from "../../../src/shared/http/traceMiddleware";
 import { runWithTrace } from "../../../src/shared/observability/trace";
 
 describe("shared http", () => {
@@ -64,7 +67,7 @@ describe("shared http", () => {
 
       middleware(req, {} as any, next);
 
-      expect(metrics.recordAuthFailure).toHaveBeenCalledWith("invalid_token");
+      expect(metrics.recordAuthFailure).toHaveBeenCalledWith("token_malformed");
       expect(next).toHaveBeenCalledWith(
         expect.objectContaining({ code: "UNAUTHORIZED", statusCode: 401 })
       );
@@ -85,7 +88,7 @@ describe("shared http", () => {
 
       middleware(req, {} as any, next);
 
-      expect(metrics.recordAuthFailure).toHaveBeenCalledWith("invalid_token");
+      expect(metrics.recordAuthFailure).toHaveBeenCalledWith("token_expired");
       expect(next).toHaveBeenCalledWith(
         expect.objectContaining({ code: "UNAUTHORIZED", statusCode: 401 })
       );
@@ -312,6 +315,60 @@ describe("shared http", () => {
       expect(first.status).toBe(401);
       expect(second.status).toBe(429);
       expect(second.body.code).toBe("TOO_MANY_REQUESTS");
+    });
+  });
+
+  describe("healthRoutes", () => {
+    it("retorna 500 quando liveness falha", async () => {
+      const app = express();
+      const logger = { error: jest.fn() };
+      app.use(
+        buildHealthRoutes(
+          async () => {
+            throw new Error("liveness down");
+          },
+          async () => {}
+        )
+      );
+      app.use(createErrorMiddleware(logger as any));
+
+      const response = await request(app).get("/health");
+      expect(response.status).toBe(500);
+      expect(response.body.code).toBe("INTERNAL");
+    });
+  });
+
+  describe("requestLoggerMiddleware", () => {
+    it("registra requisição no finish", async () => {
+      const app = express();
+      const logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+      app.use(requestLoggerMiddleware(logger as any));
+      app.get("/ping", (_req, res) => res.status(200).json({ ok: true }));
+
+      await request(app).get("/ping");
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "HTTP request",
+        expect.objectContaining({
+          method: "GET",
+          route: "/ping",
+          statusCode: 200
+        })
+      );
+    });
+  });
+
+  describe("traceMiddleware", () => {
+    it("gera trace id quando header recebido é inválido", () => {
+      const req = { header: jest.fn().mockReturnValue("invalid trace id") } as any;
+      const res = { setHeader: jest.fn() } as any;
+      const next = jest.fn();
+
+      traceMiddleware(req, res, next);
+
+      expect(res.setHeader).toHaveBeenCalledWith("x-trace-id", expect.any(String));
+      expect(next).toHaveBeenCalledWith();
+      expect((res.setHeader as jest.Mock).mock.calls[0][1]).not.toBe("invalid trace id");
     });
   });
 });

@@ -23,6 +23,7 @@ import {
 
 export class WalletPostgresRepository implements WalletRepository {
   private readonly duplicateKeyErrorCode = "23505";
+  private readonly initialBalance = "1000.0000";
 
   constructor(
     private readonly pool: Pool,
@@ -46,7 +47,7 @@ export class WalletPostgresRepository implements WalletRepository {
     await this.timedQuery(
       this.pool,
       "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
-      [walletId, "1000.0000"],
+      [walletId, this.initialBalance],
       "ensure_wallet"
     );
   }
@@ -69,12 +70,7 @@ export class WalletPostgresRepository implements WalletRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.timedQuery(
-        client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
-        [input.walletId, "1000.0000"],
-        "ensure_wallet"
-      );
+      await this.ensureWalletWithClient(client, input.walletId);
 
       const existing = await this.timedQuery(
         client,
@@ -176,18 +172,8 @@ export class WalletPostgresRepository implements WalletRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.timedQuery(
-        client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
-        [input.fromWalletId, "1000.0000"],
-        "ensure_wallet"
-      );
-      await this.timedQuery(
-        client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
-        [input.toWalletId, "1000.0000"],
-        "ensure_wallet"
-      );
+      await this.ensureWalletWithClient(client, input.fromWalletId);
+      await this.ensureWalletWithClient(client, input.toWalletId);
 
       const existingDebit = await this.timedQuery(
         client,
@@ -279,20 +265,19 @@ export class WalletPostgresRepository implements WalletRepository {
       }
 
       this.metrics.recordIdempotencyMiss();
-      const senderWallet = await this.timedQuery(
-        client,
-        "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
-        [input.fromWalletId],
-        "lock_wallet"
-      );
-      const receiverWallet = await this.timedQuery(
-        client,
-        "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
-        [input.toWalletId],
-        "lock_wallet"
-      );
-      const currentFromBalance = normalizeMoney(senderWallet.rows[0].balance);
-      const currentToBalance = normalizeMoney(receiverWallet.rows[0].balance);
+      const orderedWalletIds = [input.fromWalletId, input.toWalletId].sort();
+      const lockedWallets = new Map<string, string>();
+      for (const walletId of orderedWalletIds) {
+        const walletResult = await this.timedQuery(
+          client,
+          "SELECT balance FROM wallets WHERE id = $1 FOR UPDATE",
+          [walletId],
+          "lock_wallet"
+        );
+        lockedWallets.set(walletId, normalizeMoney(walletResult.rows[0].balance));
+      }
+      const currentFromBalance = lockedWallets.get(input.fromWalletId) ?? "0.0000";
+      const currentToBalance = lockedWallets.get(input.toWalletId) ?? "0.0000";
       const nextFromBalance = subtractMoney(currentFromBalance, normalizedAmount);
       if (compareMoney(nextFromBalance, "0.0000") < 0) {
         throw new AppError("INSUFFICIENT_FUNDS", 422, "Insufficient funds");
@@ -487,12 +472,7 @@ export class WalletPostgresRepository implements WalletRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.timedQuery(
-        client,
-        "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
-        [input.walletId, "1000.0000"],
-        "ensure_wallet"
-      );
+      await this.ensureWalletWithClient(client, input.walletId);
       const existing = await this.timedQuery(
         client,
         "SELECT id FROM transactions WHERE wallet_id = $1 AND idempotency_key = $2",
@@ -543,5 +523,17 @@ export class WalletPostgresRepository implements WalletRepository {
       return false;
     }
     return (error as { code?: string }).code === this.duplicateKeyErrorCode;
+  }
+
+  private async ensureWalletWithClient(
+    client: { query: (text: string, params?: unknown[]) => Promise<QueryResult> },
+    walletId: string
+  ): Promise<void> {
+    await this.timedQuery(
+      client,
+      "INSERT INTO wallets (id, balance, version) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING",
+      [walletId, this.initialBalance],
+      "ensure_wallet"
+    );
   }
 }

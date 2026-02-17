@@ -5,7 +5,12 @@ export const requestLoggerMiddleware =
   (logger: Logger) =>
   (req: Request, res: Response, next: NextFunction): void => {
     const start = process.hrtime.bigint();
-    res.on("finish", () => {
+    let logged = false;
+    const logRequest = () => {
+      if (logged) {
+        return;
+      }
+      logged = true;
       const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
       const route = req.route
         ? `${req.baseUrl ?? ""}${req.route.path ?? ""}`
@@ -16,6 +21,8 @@ export const requestLoggerMiddleware =
         statusCode: res.statusCode,
         durationMs
       });
-    });
+    };
+    res.on("finish", logRequest);
+    res.on("close", logRequest);
     next();
   };

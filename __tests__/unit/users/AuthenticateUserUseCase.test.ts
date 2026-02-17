@@ -27,7 +27,8 @@ describe("AuthenticateUserUseCase", () => {
     const userRepository = {
       findByEmail: jest.fn().mockResolvedValue({
         id: "user-1",
-        name: "Ana",
+        firstName: "Ana",
+        lastName: "Silva",
         email: "a@a.com",
         password: "hash",
         createdAt: new Date()
@@ -50,7 +51,8 @@ describe("AuthenticateUserUseCase", () => {
   it("retorna usuário quando credenciais válidas", async () => {
     const user = {
       id: "user-1",
-      name: "Ana",
+      firstName: "Ana",
+      lastName: "Silva",
       email: "a@a.com",
       password: "hash",
       createdAt: new Date()
@@ -93,7 +95,8 @@ describe("AuthenticateUserUseCase", () => {
     const userRepository = {
       findByEmail: jest.fn().mockResolvedValue({
         id: "user-1",
-        name: "Ana",
+        firstName: "Ana",
+        lastName: "Silva",
         email: "a@a.com",
         password: "hash",
         createdAt: new Date()

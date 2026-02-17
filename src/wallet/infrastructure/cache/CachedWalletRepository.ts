@@ -16,6 +16,8 @@ import { Logger } from "../../../shared/observability/logger";
 import { normalizeMoney } from "../../../shared/money";
 
 export class CachedWalletRepository implements WalletRepository {
+  private readonly ttlSeconds = 60;
+
   constructor(
     private readonly redis: Redis,
     private readonly baseRepository: WalletRepository,
@@ -44,7 +46,7 @@ export class CachedWalletRepository implements WalletRepository {
     this.metrics.recordCacheMiss("wallet_balance");
     const balance = await this.baseRepository.getBalance(walletId);
     try {
-      await this.redis.set(cacheKey, normalizeMoney(balance), "EX", 60);
+      await this.redis.set(cacheKey, normalizeMoney(balance), "EX", this.ttlSeconds);
     } catch (error) {
       this.logger.warn("Failed to update wallet balance cache", {
         walletId,
@@ -61,7 +63,7 @@ export class CachedWalletRepository implements WalletRepository {
         this.balanceKey(input.walletId),
         normalizeMoney(result.balance),
         "EX",
-        60
+        this.ttlSeconds
       );
     } catch (error) {
       this.logger.warn("Failed to update wallet balance cache after transaction", {
@@ -81,13 +83,13 @@ export class CachedWalletRepository implements WalletRepository {
         this.balanceKey(input.fromWalletId),
         normalizeMoney(result.fromBalance),
         "EX",
-        60
+        this.ttlSeconds
       );
       await this.redis.set(
         this.balanceKey(input.toWalletId),
         normalizeMoney(result.toBalance),
         "EX",
-        60
+        this.ttlSeconds
       );
     } catch (error) {
       this.logger.warn("Failed to update wallet balance cache after transfer", {
@@ -121,8 +123,14 @@ export class CachedWalletRepository implements WalletRepository {
   async compensateTransaction(input: CompensateTransactionInput): Promise<void> {
     await this.baseRepository.compensateTransaction(input);
     try {
+      await this.redis.del(this.balanceKey(input.walletId));
       const balance = await this.baseRepository.getBalance(input.walletId);
-      await this.redis.set(this.balanceKey(input.walletId), normalizeMoney(balance), "EX", 60);
+      await this.redis.set(
+        this.balanceKey(input.walletId),
+        normalizeMoney(balance),
+        "EX",
+        this.ttlSeconds
+      );
     } catch (error) {
       this.logger.warn("Failed to update wallet balance cache after compensation", {
         walletId: input.walletId,

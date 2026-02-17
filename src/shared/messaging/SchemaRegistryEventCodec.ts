@@ -45,12 +45,16 @@ export class SchemaRegistryEventCodec {
     const schemaId = await this.getOrRegisterSchemaId(eventName);
     try {
       return await this.schemaRegistry.encode(schemaId, event);
-    } catch {
-      throw new SchemaValidationError(`Failed to encode Kafka event ${event.name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SchemaValidationError(`Failed to encode Kafka event ${event.name}: ${message}`);
     }
   }
 
   async decode(buffer: Buffer, expectedEventNames: SupportedEventName[]): Promise<DomainEvent> {
+    if (expectedEventNames.length === 0) {
+      throw new SchemaValidationError("No expected Kafka event names configured for topic");
+    }
     try {
       const decoded = await this.schemaRegistry.decode(buffer);
       if (
@@ -71,7 +75,8 @@ export class SchemaRegistryEventCodec {
       if (error instanceof SchemaValidationError) {
         throw error;
       }
-      throw new SchemaValidationError("Failed to decode Kafka event");
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SchemaValidationError(`Failed to decode Kafka event: ${message}`);
     }
   }
 

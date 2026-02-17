@@ -111,7 +111,9 @@ describe("SchemaRegistryEventCodec", () => {
           email: "ana@example.com"
         }
       })
-    ).rejects.toEqual(new SchemaValidationError("Failed to encode Kafka event users.created"));
+    ).rejects.toEqual(
+      new SchemaValidationError("Failed to encode Kafka event users.created: encode failed")
+    );
   });
 
   it("decodifica evento esperado", async () => {
@@ -163,7 +165,15 @@ describe("SchemaRegistryEventCodec", () => {
     const codec = new SchemaRegistryEventCodec({ host: "http://schema-registry:8081" });
 
     await expect(codec.decode(Buffer.from("avro"), ["users.created"])).rejects.toEqual(
-      new SchemaValidationError("Failed to decode Kafka event")
+      new SchemaValidationError("Failed to decode Kafka event: registry down")
+    );
+  });
+
+  it("falha ao decodificar quando lista de eventos esperados está vazia", async () => {
+    const codec = new SchemaRegistryEventCodec({ host: "http://schema-registry:8081" });
+
+    await expect(codec.decode(Buffer.from("avro"), [])).rejects.toEqual(
+      new SchemaValidationError("No expected Kafka event names configured for topic")
     );
   });
 

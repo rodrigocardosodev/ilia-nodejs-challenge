@@ -79,4 +79,36 @@ describe("Wallet KafkaEventPublisher", () => {
     );
     expect(metrics.recordKafkaProduced).toHaveBeenCalledWith("wallet.transactions");
   });
+
+  it("retorna erro com causa original quando publish falha", async () => {
+    resolveTopicMock.mockReturnValue("wallet.transactions");
+    encodeMock.mockResolvedValue(Buffer.from("encoded-1"));
+    signMock.mockReturnValue("token");
+    sendMock.mockRejectedValue(new Error("send failed"));
+
+    const metrics = {
+      recordKafkaProduced: jest.fn(),
+      recordKafkaError: jest.fn()
+    };
+
+    const publisher = new KafkaEventPublisher(
+      {
+        clientId: "wallet-service",
+        brokers: ["localhost:9092"],
+        internalJwt: "internal",
+        schemaRegistryUrl: "http://localhost:8081"
+      },
+      metrics as any
+    );
+
+    await expect(
+      publisher.publishMany([
+        {
+          name: "wallet.transaction.created",
+          payload: { eventId: "evt-1" }
+        }
+      ])
+    ).rejects.toThrow("Kafka publish failed: send failed");
+    expect(metrics.recordKafkaError).toHaveBeenCalledWith("wallet.transactions");
+  });
 });

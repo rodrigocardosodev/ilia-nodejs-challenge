@@ -33,8 +33,14 @@ export const authMiddleware =
       }
       req.userId = userId;
       next();
-    } catch {
-      config.metrics.recordAuthFailure("invalid_token");
+    } catch (error) {
+      if (error instanceof jwt.TokenExpiredError) {
+        config.metrics.recordAuthFailure("token_expired");
+      } else if (error instanceof jwt.JsonWebTokenError) {
+        config.metrics.recordAuthFailure("token_malformed");
+      } else {
+        config.metrics.recordAuthFailure("invalid_token");
+      }
       next(new AppError("UNAUTHORIZED", 401, "Unauthorized"));
     }
   };

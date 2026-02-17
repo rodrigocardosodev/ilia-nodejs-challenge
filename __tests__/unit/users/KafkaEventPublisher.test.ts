@@ -107,7 +107,7 @@ describe("Users KafkaEventPublisher", () => {
           eventId: "evt-1"
         }
       })
-    ).rejects.toEqual(new Error("Kafka publish failed"));
+    ).rejects.toThrow("Kafka publish failed: send failed");
 
     expect(metrics.recordKafkaError).toHaveBeenCalledWith("users.created");
   });

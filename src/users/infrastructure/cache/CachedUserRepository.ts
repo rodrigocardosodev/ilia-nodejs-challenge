@@ -4,7 +4,18 @@ import { User } from "../../domain/entities/User";
 import { Metrics } from "../../../shared/observability/metrics";
 import { Logger } from "../../../shared/observability/logger";
 
+type CachedUserData = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  createdAt: string;
+};
+
 export class CachedUserRepository implements UserRepository {
+  private readonly ttlSeconds = 120;
+
   constructor(
     private readonly redis: Redis,
     private readonly baseRepository: UserRepository,
@@ -19,9 +30,9 @@ export class CachedUserRepository implements UserRepository {
         this.userKey(user.id),
         JSON.stringify(this.toCacheData(user)),
         "EX",
-        120
+        this.ttlSeconds
       );
-      await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
+      await this.redis.set(this.emailKey(user.email), user.id, "EX", this.ttlSeconds);
     } catch (error) {
       this.logger.warn("Failed to cache user after create", {
         userId: user.id,
@@ -35,15 +46,15 @@ export class CachedUserRepository implements UserRepository {
     try {
       const cached = await this.redis.get(this.userKey(id));
       if (cached) {
-        const data = JSON.parse(cached);
-        if (data.id && data.email && data.createdAt) {
+        const data = JSON.parse(cached) as CachedUserData;
+        if (data.id && data.email && data.password && data.createdAt) {
           this.metrics.recordCacheHit("users_by_id");
           return new User(
             data.id,
             data.firstName,
             data.lastName,
             data.email,
-            "",
+            data.password,
             new Date(data.createdAt)
           );
         }
@@ -58,7 +69,12 @@ export class CachedUserRepository implements UserRepository {
     const user = await this.baseRepository.findById(id);
     if (user) {
       try {
-        await this.redis.set(this.userKey(id), JSON.stringify(this.toCacheData(user)), "EX", 120);
+        await this.redis.set(
+          this.userKey(id),
+          JSON.stringify(this.toCacheData(user)),
+          "EX",
+          this.ttlSeconds
+        );
       } catch (error) {
         this.logger.warn("Failed to update user cache by id", {
           userId: id,
@@ -74,7 +90,11 @@ export class CachedUserRepository implements UserRepository {
       const cachedId = await this.redis.get(this.emailKey(email));
       if (cachedId) {
         this.metrics.recordCacheHit("users_by_email");
-        return this.baseRepository.findById(cachedId);
+        const user = await this.findById(cachedId);
+        if (user) {
+          return user;
+        }
+        await this.redis.del(this.emailKey(email));
       }
     } catch (error) {
       this.logger.warn("Failed to read user cache by email", {
@@ -90,9 +110,9 @@ export class CachedUserRepository implements UserRepository {
           this.userKey(user.id),
           JSON.stringify(this.toCacheData(user)),
           "EX",
-          120
+          this.ttlSeconds
         );
-        await this.redis.set(this.emailKey(email), user.id, "EX", 120);
+        await this.redis.set(this.emailKey(user.email), user.id, "EX", this.ttlSeconds);
       } catch (error) {
         this.logger.warn("Failed to update user cache by email", {
           userId: user.id,
@@ -109,6 +129,7 @@ export class CachedUserRepository implements UserRepository {
   }
 
   async updateById(id: string, input: Omit<CreateUserInput, "id">): Promise<User | null> {
+    const existing = await this.baseRepository.findById(id);
     const user = await this.baseRepository.updateById(id, input);
     if (!user) {
       return null;
@@ -118,9 +139,12 @@ export class CachedUserRepository implements UserRepository {
         this.userKey(user.id),
         JSON.stringify(this.toCacheData(user)),
         "EX",
-        120
+        this.ttlSeconds
       );
-      await this.redis.set(this.emailKey(user.email), user.id, "EX", 120);
+      await this.redis.set(this.emailKey(user.email), user.id, "EX", this.ttlSeconds);
+      if (existing && existing.email.toLowerCase() !== user.email.toLowerCase()) {
+        await this.redis.del(this.emailKey(existing.email));
+      }
     } catch (error) {
       this.logger.warn("Failed to update user cache after update", {
         userId: user.id,
@@ -160,6 +184,7 @@ export class CachedUserRepository implements UserRepository {
     firstName: string;
     lastName: string;
     email: string;
+    password: string;
     createdAt: string;
   } {
     return {
@@ -167,6 +192,7 @@ export class CachedUserRepository implements UserRepository {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      password: user.password,
       createdAt: user.createdAt.toISOString()
     };
   }

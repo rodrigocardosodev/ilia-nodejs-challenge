@@ -1,5 +1,6 @@
 import client, { Counter, Gauge, Histogram, Registry } from "prom-client";
 import { NextFunction, Request, Response } from "express";
+import { createLogger } from "./logger";
 
 export type Metrics = {
   registry: Registry;
@@ -20,6 +21,7 @@ export type Metrics = {
 };
 
 export const createMetrics = (service: string): Metrics => {
+  const logger = createLogger(service);
   const registry = new Registry();
   registry.setDefaultLabels({ service });
   client.collectDefaultMetrics({ register: registry });
@@ -172,8 +174,13 @@ export const createMetrics = (service: string): Metrics => {
   };
 
   const metricsHandler = async (_req: Request, res: Response) => {
-    res.setHeader("Content-Type", registry.contentType);
-    res.end(await registry.metrics());
+    try {
+      res.setHeader("Content-Type", registry.contentType);
+      res.end(await registry.metrics());
+    } catch (error) {
+      logger.error("Failed to render metrics", { error: String(error) });
+      res.status(500).end("Failed to generate metrics");
+    }
   };
 
   return {

@@ -64,9 +64,10 @@ export class KafkaEventPublisher implements EventPublisher {
           }))
         });
         this.metrics.recordKafkaProduced(topic);
-      } catch {
+      } catch (error) {
         this.metrics.recordKafkaError(topic);
-        throw new Error("Kafka publish failed");
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Kafka publish failed: ${message}`);
       }
     }
   }
